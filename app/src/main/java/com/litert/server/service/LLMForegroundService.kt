@@ -9,6 +9,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
 import com.litert.server.data.RequestLogEntry
+import com.litert.server.engine.BackendType
 import com.litert.server.engine.LiteRTEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +24,7 @@ class LLMForegroundService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "litert_server_channel"
         const val EXTRA_MODEL_PATH = "model_path"
-        const val EXTRA_USE_GPU = "use_gpu"
+        const val EXTRA_BACKEND_PREF = "backend_pref"
         const val ACTION_ENGINE_READY = "com.litert.server.ENGINE_READY"
         const val ACTION_ENGINE_ERROR = "com.litert.server.ENGINE_ERROR"
         const val EXTRA_ERROR_MESSAGE = "error_message"
@@ -50,7 +51,9 @@ class LLMForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val modelPath = intent?.getStringExtra(EXTRA_MODEL_PATH) ?: return START_NOT_STICKY
-        val useGpu = intent.getBooleanExtra(EXTRA_USE_GPU, true)
+        val backendPref = BackendType.fromString(
+            intent.getStringExtra(EXTRA_BACKEND_PREF)
+        )
 
         startAsForeground()
 
@@ -59,7 +62,7 @@ class LLMForegroundService : Service() {
                 val engine = LiteRTEngine(applicationContext)
                 llmEngine = engine
 
-                val success = engine.initialize(modelPath, useGpu)
+                val success = engine.initialize(modelPath, backendPref)
                 if (!success) {
                     broadcastError("Failed to initialize LLM engine")
                     return@launch

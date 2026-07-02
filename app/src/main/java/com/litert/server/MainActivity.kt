@@ -362,7 +362,7 @@ class MainActivity : ComponentActivity() {
         appState = appState.copy(status = AppStatus.INITIALIZING)
         val intent = Intent(this, LLMForegroundService::class.java).apply {
             putExtra(LLMForegroundService.EXTRA_MODEL_PATH, downloadManager.getModelPath())
-            putExtra(LLMForegroundService.EXTRA_USE_GPU, true)
+            putExtra(LLMForegroundService.EXTRA_BACKEND_PREF, "AUTO")
         }
         startForegroundService(intent)
     }

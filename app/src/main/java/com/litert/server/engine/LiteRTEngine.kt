@@ -22,29 +22,32 @@ class LiteRTEngine(private val context: Context) {
 
     private var engine: Engine? = null
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
-    private var currentBackend: String = "GPU"
     private var currentSamplerConfig: SamplerConfig = SamplerConfig(
         topK = 40,
         topP = 0.9,
         temperature = 0.7
     )
 
+    var effectiveBackend: BackendType? = null
+        private set
+
     var isReady = false
         private set
 
     suspend fun initialize(
         modelPath: String,
-        useGpu: Boolean = true,
+        preference: BackendType = BackendType.AUTO,
         temperature: Double = 0.7,
         maxTokens: Int = 1024,
         topK: Int = 40,
         topP: Double = 0.9
-    ): Boolean {
-        return withContext(Dispatchers.IO) {
+    ): Boolean = withContext(Dispatchers.IO) {
+        currentSamplerConfig = SamplerConfig(topK = topK, topP = topP, temperature = temperature)
+        for (candidate in preference.fallbackChain()) {
             try {
-                val backend = if (useGpu) Backend.GPU() else Backend.CPU()
-                val visionBackend = if (useGpu) Backend.GPU() else Backend.CPU()
-
+                val backend = toSdkBackend(candidate)
+                // Vision encoder NPU support is uncertain on MT6878; pair NPU main with GPU vision.
+                val visionBackend = if (candidate == BackendType.NPU) Backend.GPU() else backend
                 val config = EngineConfig(
                     modelPath = modelPath,
                     backend = backend,
@@ -54,26 +57,25 @@ class LiteRTEngine(private val context: Context) {
                 val newEngine = Engine(config)
                 newEngine.initialize()
 
-                currentSamplerConfig = SamplerConfig(topK = topK, topP = topP, temperature = temperature)
-                val conv = createNewConversation(newEngine, currentSamplerConfig)
-
+                conversation = createNewConversation(newEngine, currentSamplerConfig)
                 engine = newEngine
-                conversation = conv
-                currentBackend = if (useGpu) "GPU" else "CPU"
+                effectiveBackend = candidate
                 isReady = true
-                Log.i(TAG, "Engine initialized with $currentBackend backend")
-                true
+                Log.i(TAG, "Engine initialized with $candidate backend")
+                return@withContext true
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to initialize with ${if (useGpu) "GPU" else "CPU"} backend", e)
-                if (useGpu) {
-                    Log.w(TAG, "Falling back to CPU backend...")
-                    initialize(modelPath, useGpu = false, temperature, maxTokens, topK, topP)
-                } else {
-                    isReady = false
-                    false
-                }
+                Log.e(TAG, "Backend $candidate failed to initialize, trying next in chain", e)
             }
         }
+        isReady = false
+        false
+    }
+
+    private fun toSdkBackend(type: BackendType): Backend = when (type) {
+        BackendType.NPU -> Backend.NPU(nativeLibraryDir = context.applicationInfo.nativeLibraryDir)
+        BackendType.GPU -> Backend.GPU()
+        BackendType.CPU -> Backend.CPU()
+        BackendType.AUTO -> error("AUTO is not a concrete backend")
     }
 
     private fun createNewConversation(
@@ -118,7 +120,7 @@ class LiteRTEngine(private val context: Context) {
         Log.i(TAG, "Conversation history cleared")
     }
 
-    fun getBackend(): String = currentBackend
+    fun getBackend(): String = effectiveBackend?.name ?: "NONE"
 
     fun shutdown() {
         isReady = false
