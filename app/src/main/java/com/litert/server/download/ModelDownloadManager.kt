@@ -47,8 +47,19 @@ class ModelDownloadManager(private val context: Context) {
         context.getExternalFilesDir(null)?.listFiles()
             ?.filter { it.isFile && it.name.endsWith(".litertlm") }
             ?.forEach { legacy ->
-                val dest = File(modelsDir, legacy.name)
-                if (!dest.exists()) legacy.renameTo(dest) else legacy.delete()
+                try {
+                    val dest = File(modelsDir, legacy.name)
+                    if (!dest.exists()) {
+                        if (!legacy.renameTo(dest)) {
+                            legacy.copyTo(dest, overwrite = false)
+                            legacy.delete()
+                        }
+                    } else {
+                        legacy.delete()
+                    }
+                } catch (e: java.io.IOException) {
+                    android.util.Log.w("ModelDownloadManager", "Failed to migrate legacy model ${legacy.name}", e)
+                }
             }
     }
 
@@ -82,7 +93,7 @@ class ModelDownloadManager(private val context: Context) {
     ): Flow<DownloadProgress> = flow {
         modelsDir.mkdirs()
         val destFile = File(modelsDir, filename)
-        val existingBytes = if (destFile.exists()) destFile.length() else 0L
+        var existingBytes = if (destFile.exists()) destFile.length() else 0L
 
         val requestBuilder = Request.Builder()
             .url(url)
@@ -101,6 +112,12 @@ class ModelDownloadManager(private val context: Context) {
         }
         if (!response.isSuccessful && response.code != 206) {
             throw Exception("Download failed: HTTP ${response.code} — ${response.message}")
+        }
+
+        // Server ignored our Range request and sent the full body back — restart from scratch
+        // instead of appending the full body onto the existing partial file.
+        if (existingBytes > 0 && response.code == 200) {
+            existingBytes = 0L
         }
 
         val totalBytes = when {
