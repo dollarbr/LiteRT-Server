@@ -3,7 +3,8 @@ package com.litert.server.data
 import kotlinx.serialization.Serializable
 
 enum class AppStatus {
-    MODEL_NOT_FOUND,
+    MODEL_SELECTION,
+    BROWSING,
     DOWNLOADING,
     DOWNLOAD_ERROR,
     INITIALIZING,
@@ -12,10 +13,10 @@ enum class AppStatus {
 }
 
 data class AppState(
-    val status: AppStatus = AppStatus.MODEL_NOT_FOUND,
+    val status: AppStatus = AppStatus.MODEL_SELECTION,
     val downloadProgress: Float = 0f,
     val downloadedMb: Float = 0f,
-    val totalMb: Float = 2643f,
+    val totalMb: Float = 0f,
     val downloadSpeedMbps: Float = 0f,
     val etaSeconds: Int = 0,
     val errorMessage: String? = null,
@@ -23,6 +24,8 @@ data class AppState(
     val serverPort: Int = 8080,
     val activeBackend: String = "",
     val engineReady: Boolean = false,
+    val selectedModelPath: String = "",
+    val availableModels: List<com.litert.server.download.LocalModel> = emptyList(),
     val requestLog: List<RequestLogEntry> = emptyList()
 )
 

@@ -1,12 +1,9 @@
 package com.litert.server.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
@@ -19,7 +16,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.litert.server.data.AppStatus
-import com.litert.server.download.GemmaVariant
 
 @Composable
 fun DownloadScreen(
@@ -30,12 +26,8 @@ fun DownloadScreen(
     speedMbps: Float,
     etaSeconds: Int,
     errorMessage: String?,
-    selectedVariant: GemmaVariant,
-    onVariantSelected: (GemmaVariant) -> Unit,
-    onDownload: () -> Unit,
     onRetry: () -> Unit,
-    onPickFile: () -> Unit,
-    onUseExistingModel: (String) -> Unit = {}
+    onBack: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -66,101 +58,8 @@ fun DownloadScreen(
         )
         Spacer(modifier = Modifier.height(32.dp))
 
-        // ── Model selector ────────────────────────────────────────────────
-        if (status == AppStatus.MODEL_NOT_FOUND || status == AppStatus.DOWNLOAD_ERROR) {
-            Text(
-                "Select model",
-                color = Color.Gray,
-                fontSize = 12.sp,
-                modifier = Modifier.align(Alignment.Start)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            GemmaVariant.entries.forEach { variant ->
-                val selected = variant == selectedVariant
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .border(
-                            width = if (selected) 1.5.dp else 1.dp,
-                            color = if (selected) GreenPrimary else Color(0xFF333333),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        .background(
-                            color = if (selected) Color(0xFF0D2D0D) else Color(0xFF111111),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        .clickable { onVariantSelected(variant) }
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            variant.displayName,
-                            color = if (selected) GreenPrimary else Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            variant.description,
-                            color = Color.Gray,
-                            fontSize = 11.sp
-                        )
-                    }
-                    Text(
-                        "${variant.sizeGb} GB",
-                        color = if (selected) GreenPrimary else Color.Gray,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    if (selected) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(
-                            Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = GreenPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(20.dp))
-        }
-
         // ── Status-based content ──────────────────────────────────────────
         when (status) {
-            AppStatus.MODEL_NOT_FOUND -> {
-                Button(
-                    onClick = onDownload,
-                    colors = ButtonDefaults.buttonColors(containerColor = GreenPrimary),
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.Download, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        "Download ${selectedVariant.displayName}",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedButton(
-                    onClick = onPickFile,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray),
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(
-                        Icons.Default.FolderOpen,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Browse for .litertlm file", fontSize = 14.sp)
-                }
-            }
-
             AppStatus.DOWNLOADING -> {
                 LinearProgressIndicator(
                     progress = { progressPercent },
@@ -218,7 +117,7 @@ fun DownloadScreen(
                 }
                 Spacer(modifier = Modifier.height(10.dp))
                 OutlinedButton(
-                    onClick = onPickFile,
+                    onClick = onBack,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray),
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(12.dp)
@@ -229,7 +128,7 @@ fun DownloadScreen(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Browse for .litertlm file", fontSize = 14.sp)
+                    Text("Back to model list", fontSize = 14.sp)
                 }
             }
 
@@ -240,7 +139,7 @@ fun DownloadScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    "Loading model into GPU memory...",
+                    "Loading model...",
                     color = Color.White,
                     fontSize = 16.sp,
                     textAlign = TextAlign.Center

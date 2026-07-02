@@ -32,7 +32,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.litert.server.data.*
-import com.litert.server.download.GemmaVariant
 import com.litert.server.download.ModelDownloadManager
 import com.litert.server.service.LLMForegroundService
 import com.litert.server.ui.*
@@ -53,7 +52,7 @@ class MainActivity : ComponentActivity() {
     private var visionResult by mutableStateOf("")
     private var isAnalyzing by mutableStateOf(false)
     private var selectedTab by mutableIntStateOf(0)
-    private var selectedVariant by mutableStateOf(GemmaVariant.E2B)
+    private var pendingDownload: Triple<String, String, Long?>? = null // url, filename, expectedBytes
 
     // Holds reference to the engine once the service boots it.
     // We bind to the service via a shared singleton so the UI can call it directly.
@@ -64,23 +63,18 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri == null) return@registerForActivityResult
-        appState = appState.copy(status = AppStatus.INITIALIZING)
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val inputStream = contentResolver.openInputStream(uri)
-                    ?: throw Exception("Cannot open file")
-                val dest = File(downloadManager.getModelPath())
-                dest.parentFile?.mkdirs()
-                inputStream.use { ins ->
-                    dest.outputStream().use { out -> ins.copyTo(out) }
-                }
-                withContext(Dispatchers.Main) { startEngineService() }
+                val name = contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (c.moveToFirst() && idx >= 0) c.getString(idx) else null
+                } ?: "imported-${System.currentTimeMillis()}.litertlm"
+                val input = contentResolver.openInputStream(uri) ?: throw Exception("Cannot open file")
+                downloadManager.importModel(input, name)
+                withContext(Dispatchers.Main) { refreshModelLibrary() }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    appState = appState.copy(
-                        status = AppStatus.DOWNLOAD_ERROR,
-                        errorMessage = "Failed to copy file: ${e.message}"
-                    )
+                    appState = appState.copy(status = AppStatus.DOWNLOAD_ERROR, errorMessage = "Failed to import file: ${e.message}")
                 }
             }
         }
@@ -135,7 +129,8 @@ class MainActivity : ComponentActivity() {
             })
         }
 
-        checkModelAndUpdateState()
+        downloadManager.migrateLegacyModels()
+        refreshModelLibrary()
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -147,33 +142,44 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun AppContent() {
         when (appState.status) {
-            AppStatus.MODEL_NOT_FOUND, AppStatus.DOWNLOADING, AppStatus.DOWNLOAD_ERROR, AppStatus.INITIALIZING -> {
-                DownloadScreen(
-                    status = appState.status,
-                    progressPercent = appState.downloadProgress,
-                    downloadedMb = appState.downloadedMb,
-                    totalMb = appState.totalMb,
-                    speedMbps = appState.downloadSpeedMbps,
-                    etaSeconds = appState.etaSeconds,
-                    errorMessage = appState.errorMessage,
-                    selectedVariant = selectedVariant,
-                    onVariantSelected = { variant ->
-                        selectedVariant = variant
-                        downloadManager.setVariant(variant)
-                        checkModelAndUpdateState()
-                    },
-                    onDownload = ::startDownload,
-                    onRetry = ::startDownload,
-                    onPickFile = { pickFileLauncher.launch(arrayOf("*/*")) }
-                )
+            AppStatus.MODEL_SELECTION -> ModelLibraryScreen(
+                models = appState.availableModels,
+                lastModelPath = appState.selectedModelPath,
+                onSelect = ::selectAndLoadModel,
+                onBrowseHuggingFace = { appState = appState.copy(status = AppStatus.BROWSING) },
+                onImportFile = { pickFileLauncher.launch(arrayOf("*/*")) },
+                onDelete = { model ->
+                    downloadManager.deleteModel(model.path)
+                    refreshModelLibrary()
+                }
+            )
+            AppStatus.BROWSING -> {
+                // Placeholder until Task 7 adds ModelBrowserScreen
+                Box(modifier = Modifier.fillMaxSize().background(DarkBackground)) {
+                    Column(modifier = Modifier.padding(24.dp)) {
+                        Text("Model browser coming soon", color = Color.White)
+                        Button(onClick = ::refreshModelLibrary) { Text("Back") }
+                    }
+                }
             }
+            AppStatus.DOWNLOADING, AppStatus.DOWNLOAD_ERROR, AppStatus.INITIALIZING -> DownloadScreen(
+                status = appState.status,
+                progressPercent = appState.downloadProgress,
+                downloadedMb = appState.downloadedMb,
+                totalMb = appState.totalMb,
+                speedMbps = appState.downloadSpeedMbps,
+                etaSeconds = appState.etaSeconds,
+                errorMessage = appState.errorMessage,
+                onRetry = ::retryDownload,
+                onBack = ::refreshModelLibrary
+            )
             AppStatus.READY -> MainTabLayout()
             AppStatus.ERROR -> {
                 Box(modifier = Modifier.fillMaxSize().background(DarkBackground)) {
                     Column(modifier = Modifier.padding(24.dp)) {
                         Text("Error: ${appState.errorMessage}", color = Color(0xFFEF4444))
                         Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = ::checkModelAndUpdateState) { Text("Retry") }
+                        Button(onClick = ::refreshModelLibrary) { Text("Back to models") }
                     }
                 }
             }
@@ -234,9 +240,9 @@ class MainActivity : ComponentActivity() {
                         onToggle = ::toggleServer
                     )
                     3 -> SettingsScreen(
-                        modelPath = downloadManager.getModelPath(),
+                        modelPath = appState.selectedModelPath,
                         activeBackend = appState.activeBackend,
-                        onClearCache = { downloadManager.deleteModel(); checkModelAndUpdateState() }
+                        onClearCache = { downloadManager.deleteModel(appState.selectedModelPath); refreshModelLibrary() }
                     )
                 }
             }
@@ -329,23 +335,33 @@ class MainActivity : ComponentActivity() {
     }
 
     // ── Lifecycle helpers ───────────────────────────────────────────────
-    private fun checkModelAndUpdateState() {
-        if (downloadManager.isModelDownloaded()) {
-            startEngineService()
-        } else {
-            appState = appState.copy(status = AppStatus.MODEL_NOT_FOUND)
+    private fun refreshModelLibrary() {
+        lifecycleScope.launch {
+            val settings = settingsStore.current()
+            appState = appState.copy(
+                status = AppStatus.MODEL_SELECTION,
+                availableModels = downloadManager.listLocalModels(),
+                selectedModelPath = settings.lastModelPath
+            )
         }
     }
 
-    private fun startDownload() {
-        appState = appState.copy(status = AppStatus.DOWNLOADING, errorMessage = null)
+    private fun selectAndLoadModel(model: com.litert.server.download.LocalModel) {
+        lifecycleScope.launch {
+            settingsStore.setLastModelPath(model.path)
+            appState = appState.copy(selectedModelPath = model.path)
+            startEngineService(model.path)
+        }
+    }
+
+    private fun startDownload(url: String, filename: String, expectedBytes: Long?) {
+        pendingDownload = Triple(url, filename, expectedBytes)
+        appState = appState.copy(status = AppStatus.DOWNLOADING, errorMessage = null, downloadProgress = 0f)
         lifecycleScope.launch(Dispatchers.IO) {
-            downloadManager.downloadModel()
+            val token = settingsStore.current().hfToken
+            downloadManager.downloadModel(url, filename, token, expectedBytes)
                 .catch { e ->
-                    appState = appState.copy(
-                        status = AppStatus.DOWNLOAD_ERROR,
-                        errorMessage = e.message
-                    )
+                    appState = appState.copy(status = AppStatus.DOWNLOAD_ERROR, errorMessage = e.message)
                 }
                 .collect { progress ->
                     appState = appState.copy(
@@ -355,15 +371,22 @@ class MainActivity : ComponentActivity() {
                         downloadSpeedMbps = progress.speedMbps,
                         etaSeconds = progress.etaSeconds
                     )
-                    if (progress.isDone) startEngineService()
+                    if (progress.isDone) {
+                        withContext(Dispatchers.Main) { refreshModelLibrary() }
+                    }
                 }
         }
     }
 
-    private fun startEngineService() {
+    private fun retryDownload() {
+        pendingDownload?.let { (url, filename, bytes) -> startDownload(url, filename, bytes) }
+            ?: refreshModelLibrary()
+    }
+
+    private fun startEngineService(modelPath: String) {
         appState = appState.copy(status = AppStatus.INITIALIZING)
         val intent = Intent(this, LLMForegroundService::class.java).apply {
-            putExtra(LLMForegroundService.EXTRA_MODEL_PATH, downloadManager.getModelPath())
+            putExtra(LLMForegroundService.EXTRA_MODEL_PATH, modelPath)
         }
         startForegroundService(intent)
     }
@@ -374,7 +397,7 @@ class MainActivity : ComponentActivity() {
             liteRTEngine = null
             appState = appState.copy(isServerRunning = false, engineReady = false)
         } else {
-            startEngineService()
+            startEngineService(appState.selectedModelPath)
         }
     }
 
