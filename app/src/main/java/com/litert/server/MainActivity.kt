@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var downloadManager: ModelDownloadManager
     private lateinit var settingsStore: SettingsStore
     private var appState by mutableStateOf(AppState())
+    private var currentSettings by mutableStateOf(AppSettings())
     private var chatMessages = mutableStateListOf<ChatMessage>()
     private var isGenerating by mutableStateOf(false)
     private var visionResult by mutableStateOf("")
@@ -117,6 +118,10 @@ class MainActivity : ComponentActivity() {
 
         downloadManager = ModelDownloadManager(this)
         settingsStore = SettingsStore(this)
+
+        lifecycleScope.launch {
+            settingsStore.settings.collect { currentSettings = it }
+        }
 
         val filter = IntentFilter().apply {
             addAction(LLMForegroundService.ACTION_ENGINE_READY)
@@ -244,9 +249,38 @@ class MainActivity : ComponentActivity() {
                         onToggle = ::toggleServer
                     )
                     3 -> SettingsScreen(
+                        settings = currentSettings,
                         modelPath = appState.selectedModelPath,
                         activeBackend = appState.activeBackend,
-                        onClearCache = { downloadManager.deleteModel(appState.selectedModelPath); refreshModelLibrary() }
+                        onBackendSelected = { pref ->
+                            lifecycleScope.launch { settingsStore.setBackendPreference(pref) }
+                        },
+                        onPortChanged = { port ->
+                            lifecycleScope.launch {
+                                settingsStore.setServerPort(port)
+                                restartService()
+                            }
+                        },
+                        onHfTokenChanged = { token ->
+                            lifecycleScope.launch { settingsStore.setHfToken(token) }
+                        },
+                        onSamplerChanged = { temp, maxTok ->
+                            lifecycleScope.launch {
+                                settingsStore.setSampler(temp, currentSettings.topK, currentSettings.topP, maxTok)
+                            }
+                        },
+                        onChangeModel = {
+                            stopService(Intent(this@MainActivity, LLMForegroundService::class.java))
+                            liteRTEngine = null
+                            refreshModelLibrary()
+                        },
+                        onDeleteModel = {
+                            stopService(Intent(this@MainActivity, LLMForegroundService::class.java))
+                            liteRTEngine = null
+                            downloadManager.deleteModel(appState.selectedModelPath)
+                            lifecycleScope.launch { settingsStore.setLastModelPath("") }
+                            refreshModelLibrary()
+                        }
                     )
                 }
             }
@@ -441,6 +475,14 @@ class MainActivity : ComponentActivity() {
             liteRTEngine = null
             appState = appState.copy(isServerRunning = false, engineReady = false)
         } else {
+            startEngineService(appState.selectedModelPath)
+        }
+    }
+
+    private fun restartService() {
+        if (appState.isServerRunning) {
+            stopService(Intent(this, LLMForegroundService::class.java))
+            liteRTEngine = null
             startEngineService(appState.selectedModelPath)
         }
     }
