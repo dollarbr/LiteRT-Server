@@ -44,6 +44,7 @@ class LiteRTEngine(private val context: Context) {
     ): Boolean = withContext(Dispatchers.IO) {
         currentSamplerConfig = SamplerConfig(topK = topK, topP = topP, temperature = temperature)
         for (candidate in preference.fallbackChain()) {
+            var attemptEngine: Engine? = null
             try {
                 val backend = toSdkBackend(candidate)
                 // Vision encoder NPU support is uncertain on MT6878; pair NPU main with GPU vision.
@@ -54,17 +55,22 @@ class LiteRTEngine(private val context: Context) {
                     visionBackend = visionBackend,
                     cacheDir = context.cacheDir.absolutePath
                 )
-                val newEngine = Engine(config)
-                newEngine.initialize()
+                attemptEngine = Engine(config)
+                attemptEngine.initialize()
 
-                conversation = createNewConversation(newEngine, currentSamplerConfig)
-                engine = newEngine
+                conversation = createNewConversation(attemptEngine, currentSamplerConfig)
+                engine = attemptEngine
                 effectiveBackend = candidate
                 isReady = true
                 Log.i(TAG, "Engine initialized with $candidate backend")
                 return@withContext true
             } catch (e: Exception) {
                 Log.e(TAG, "Backend $candidate failed to initialize, trying next in chain", e)
+                try {
+                    attemptEngine?.close()
+                } catch (closeError: Exception) {
+                    Log.w(TAG, "Failed to close partially-initialized engine", closeError)
+                }
             }
         }
         isReady = false
