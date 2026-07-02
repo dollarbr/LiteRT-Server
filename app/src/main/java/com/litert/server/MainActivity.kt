@@ -53,6 +53,10 @@ class MainActivity : ComponentActivity() {
     private var isAnalyzing by mutableStateOf(false)
     private var selectedTab by mutableIntStateOf(0)
     private var pendingDownload: Triple<String, String, Long?>? = null // url, filename, expectedBytes
+    private var hfResults by mutableStateOf(listOf<com.litert.server.hf.HfModel>())
+    private var hfLoading by mutableStateOf(false)
+    private var hfError by mutableStateOf<String?>(null)
+    private var hfHasToken by mutableStateOf(false)
 
     // Holds reference to the engine once the service boots it.
     // We bind to the service via a shared singleton so the UI can call it directly.
@@ -146,22 +150,22 @@ class MainActivity : ComponentActivity() {
                 models = appState.availableModels,
                 lastModelPath = appState.selectedModelPath,
                 onSelect = ::selectAndLoadModel,
-                onBrowseHuggingFace = { appState = appState.copy(status = AppStatus.BROWSING) },
+                onBrowseHuggingFace = ::openModelBrowser,
                 onImportFile = { pickFileLauncher.launch(arrayOf("*/*")) },
                 onDelete = { model ->
                     downloadManager.deleteModel(model.path)
                     refreshModelLibrary()
                 }
             )
-            AppStatus.BROWSING -> {
-                // Placeholder until Task 7 adds ModelBrowserScreen
-                Box(modifier = Modifier.fillMaxSize().background(DarkBackground)) {
-                    Column(modifier = Modifier.padding(24.dp)) {
-                        Text("Model browser coming soon", color = Color.White)
-                        Button(onClick = ::refreshModelLibrary) { Text("Back") }
-                    }
-                }
-            }
+            AppStatus.BROWSING -> ModelBrowserScreen(
+                isLoading = hfLoading,
+                results = hfResults,
+                errorMessage = hfError,
+                hasToken = hfHasToken,
+                onSearch = ::searchHfModels,
+                onDownload = ::downloadHfModel,
+                onBack = ::refreshModelLibrary
+            )
             AppStatus.DOWNLOADING, AppStatus.DOWNLOAD_ERROR, AppStatus.INITIALIZING -> DownloadScreen(
                 status = appState.status,
                 progressPercent = appState.downloadProgress,
@@ -343,6 +347,46 @@ class MainActivity : ComponentActivity() {
                 availableModels = downloadManager.listLocalModels(),
                 selectedModelPath = settings.lastModelPath
             )
+        }
+    }
+
+    private fun openModelBrowser() {
+        appState = appState.copy(status = AppStatus.BROWSING)
+        searchHfModels("")
+    }
+
+    private fun searchHfModels(query: String) {
+        hfLoading = true
+        hfError = null
+        lifecycleScope.launch {
+            try {
+                val token = settingsStore.current().hfToken
+                hfHasToken = token.isNotBlank()
+                val api = com.litert.server.hf.HuggingFaceApi { token }
+                hfResults = api.searchModels(query)
+            } catch (e: Exception) {
+                hfError = e.message
+            } finally {
+                hfLoading = false
+            }
+        }
+    }
+
+    private fun downloadHfModel(model: com.litert.server.hf.HfModel) {
+        hfLoading = true
+        lifecycleScope.launch {
+            try {
+                val token = settingsStore.current().hfToken
+                val api = com.litert.server.hf.HuggingFaceApi { token }
+                val detail = api.modelDetail(model.id)
+                val file = com.litert.server.hf.HfJson.litertlmFiles(detail).firstOrNull()
+                    ?: throw Exception("No .litertlm file in ${model.id}")
+                val url = "https://huggingface.co/${model.id}/resolve/main/${file.rfilename}"
+                startDownload(url, file.rfilename, file.size)
+            } catch (e: Exception) {
+                hfError = e.message
+                hfLoading = false
+            }
         }
     }
 
