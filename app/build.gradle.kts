@@ -7,13 +7,13 @@ plugins {
 
 android {
     namespace = "com.litert.server"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.litert.server"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        targetSdk = 36
+        versionCode = 2
+        versionName = "1.1"
     }
     buildFeatures { compose = true }
     compileOptions {
@@ -33,7 +33,10 @@ android {
 
 dependencies {
     // LiteRT-LM SDK
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
+
+    // Settings persistence
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // Ktor HTTP server (CIO engine)
     val ktor_version = "2.3.12"
@@ -70,4 +73,7 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    // Unit tests
+    testImplementation("junit:junit:4.13.2")
 }
