@@ -21,7 +21,7 @@ data class AppState(
     val errorMessage: String? = null,
     val isServerRunning: Boolean = false,
     val serverPort: Int = 8080,
-    val isGpuBackend: Boolean = true,
+    val activeBackend: String = "",
     val engineReady: Boolean = false,
     val requestLog: List<RequestLogEntry> = emptyList()
 )
@@ -68,7 +68,7 @@ data class VisionRequest(
 data class HealthResponse(
     val status: String,
     val model: String,
-    val gpu: Boolean,
+    val backend: String,
     val ready: Boolean
 )
 

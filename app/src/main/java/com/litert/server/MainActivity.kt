@@ -46,6 +46,7 @@ import java.io.File
 class MainActivity : ComponentActivity() {
 
     private lateinit var downloadManager: ModelDownloadManager
+    private lateinit var settingsStore: SettingsStore
     private var appState by mutableStateOf(AppState())
     private var chatMessages = mutableStateListOf<ChatMessage>()
     private var isGenerating by mutableStateOf(false)
@@ -90,14 +91,14 @@ class MainActivity : ComponentActivity() {
             when (intent.action) {
                 LLMForegroundService.ACTION_ENGINE_READY -> {
                     val port = intent.getIntExtra(LLMForegroundService.EXTRA_SERVER_PORT, 8080)
-                    val isGpu = intent.getBooleanExtra(LLMForegroundService.EXTRA_IS_GPU, true)
+                    val backend = intent.getStringExtra(LLMForegroundService.EXTRA_BACKEND) ?: "NONE"
                     // Grab the engine reference from the service singleton
                     liteRTEngine = LLMForegroundService.engineInstance
                     appState = appState.copy(
                         status = AppStatus.READY,
                         isServerRunning = true,
                         serverPort = port,
-                        isGpuBackend = isGpu,
+                        activeBackend = backend,
                         engineReady = true
                     )
                 }
@@ -117,6 +118,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         downloadManager = ModelDownloadManager(this)
+        settingsStore = SettingsStore(this)
 
         val filter = IntentFilter().apply {
             addAction(LLMForegroundService.ACTION_ENGINE_READY)
@@ -233,7 +235,7 @@ class MainActivity : ComponentActivity() {
                     )
                     3 -> SettingsScreen(
                         modelPath = downloadManager.getModelPath(),
-                        isGpu = appState.isGpuBackend,
+                        activeBackend = appState.activeBackend,
                         onClearCache = { downloadManager.deleteModel(); checkModelAndUpdateState() }
                     )
                 }
@@ -362,7 +364,6 @@ class MainActivity : ComponentActivity() {
         appState = appState.copy(status = AppStatus.INITIALIZING)
         val intent = Intent(this, LLMForegroundService::class.java).apply {
             putExtra(LLMForegroundService.EXTRA_MODEL_PATH, downloadManager.getModelPath())
-            putExtra(LLMForegroundService.EXTRA_BACKEND_PREF, "AUTO")
         }
         startForegroundService(intent)
     }

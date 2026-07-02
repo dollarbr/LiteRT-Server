@@ -9,7 +9,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -19,12 +18,11 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun SettingsScreen(
     modelPath: String,
-    isGpu: Boolean,
+    activeBackend: String,
     onClearCache: () -> Unit
 ) {
     var temperature by remember { mutableFloatStateOf(0.7f) }
     var maxTokens by remember { mutableFloatStateOf(1024f) }
-    var useGpu by remember { mutableStateOf(isGpu) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     Column(
@@ -46,25 +44,9 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         SettingsCard {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("GPU Acceleration", color = Color.White, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Adreno 630 / OpenCL 2.0",
-                        color = Color.Gray,
-                        fontSize = 12.sp
-                    )
-                }
-                Switch(
-                    checked = useGpu,
-                    onCheckedChange = { useGpu = it },
-                    colors = SwitchDefaults.colors(checkedThumbColor = GreenPrimary, checkedTrackColor = Color(0xFF1A3A1A))
-                )
-            }
+            Text("Active Backend", color = Color.Gray, fontSize = 12.sp)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(activeBackend, color = GreenPrimary, fontWeight = FontWeight.SemiBold)
         }
 
         Spacer(modifier = Modifier.height(12.dp))

@@ -40,6 +40,7 @@ import kotlinx.serialization.json.Json
 
 class HttpApiServer(
     private val engine: LiteRTEngine,
+    private val modelName: String,
     private val onRequest: (RequestLogEntry) -> Unit
 ) {
     private var server: ApplicationEngine? = null
@@ -48,8 +49,8 @@ class HttpApiServer(
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    fun start(): Int {
-        for (tryPort in 8080..8082) {
+    fun start(basePort: Int = 8080): Int {
+        for (tryPort in basePort..(basePort + 2)) {
             try {
                 server = embeddedServer(CIO, port = tryPort) {
                     install(ContentNegotiation) {
@@ -74,8 +75,8 @@ class HttpApiServer(
                             call.respond(
                                 HealthResponse(
                                     status = "ok",
-                                    model = "gemma-4-E2B",
-                                    gpu = engine.getBackend() == "GPU",
+                                    model = modelName,
+                                    backend = engine.getBackend(),
                                     ready = engine.isReady
                                 )
                             )
@@ -88,7 +89,7 @@ class HttpApiServer(
                                 call.respond(
                                     OaiModelsResponse(
                                         data = listOf(
-                                            OaiModelEntry(id = "gemma-4-e2b")
+                                            OaiModelEntry(id = modelName)
                                         )
                                     )
                                 )
@@ -118,7 +119,7 @@ class HttpApiServer(
                                         val firstChunk = OaiStreamChunk(
                                             id = reqId,
                                             created = System.currentTimeMillis() / 1000,
-                                            model = "gemma-4-e2b",
+                                            model = modelName,
                                             choices = listOf(
                                                 OaiStreamChoice(
                                                     index = 0,
@@ -133,7 +134,7 @@ class HttpApiServer(
                                             val chunk = OaiStreamChunk(
                                                 id = reqId,
                                                 created = System.currentTimeMillis() / 1000,
-                                                model = "gemma-4-e2b",
+                                                model = modelName,
                                                 choices = listOf(
                                                     OaiStreamChoice(
                                                         index = 0,
@@ -149,7 +150,7 @@ class HttpApiServer(
                                         val stopChunk = OaiStreamChunk(
                                             id = reqId,
                                             created = System.currentTimeMillis() / 1000,
-                                            model = "gemma-4-e2b",
+                                            model = modelName,
                                             choices = listOf(
                                                 OaiStreamChoice(
                                                     index = 0,
@@ -173,7 +174,7 @@ class HttpApiServer(
                                         OaiChatResponse(
                                             id = "chatcmpl-${System.currentTimeMillis()}",
                                             created = System.currentTimeMillis() / 1000,
-                                            model = "gemma-4-e2b",
+                                            model = modelName,
                                             choices = listOf(
                                                 OaiChoice(
                                                     index = 0,
@@ -237,10 +238,10 @@ class HttpApiServer(
                 port = tryPort
                 return tryPort
             } catch (e: Exception) {
-                if (tryPort == 8082) throw e
+                if (tryPort == basePort + 2) throw e
             }
         }
-        throw IllegalStateException("Could not bind to any port (8080-8082)")
+        throw IllegalStateException("Could not bind to any port ($basePort-${basePort + 2})")
     }
 
     fun stop() {

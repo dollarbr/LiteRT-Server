@@ -9,7 +9,6 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
 import com.litert.server.data.RequestLogEntry
-import com.litert.server.engine.BackendType
 import com.litert.server.engine.LiteRTEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,12 +23,11 @@ class LLMForegroundService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "litert_server_channel"
         const val EXTRA_MODEL_PATH = "model_path"
-        const val EXTRA_BACKEND_PREF = "backend_pref"
         const val ACTION_ENGINE_READY = "com.litert.server.ENGINE_READY"
         const val ACTION_ENGINE_ERROR = "com.litert.server.ENGINE_ERROR"
         const val EXTRA_ERROR_MESSAGE = "error_message"
         const val EXTRA_SERVER_PORT = "server_port"
-        const val EXTRA_IS_GPU = "is_gpu"
+        const val EXTRA_BACKEND = "backend"
 
         /**
          * Shared engine reference so MainActivity can call it directly for in-app chat/vision.
@@ -51,35 +49,42 @@ class LLMForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val modelPath = intent?.getStringExtra(EXTRA_MODEL_PATH) ?: return START_NOT_STICKY
-        val backendPref = BackendType.fromString(
-            intent.getStringExtra(EXTRA_BACKEND_PREF)
-        )
 
         startAsForeground()
 
         scope.launch {
             try {
+                val settings = com.litert.server.data.SettingsStore(applicationContext).current()
+                val backendPref = com.litert.server.engine.BackendType.fromString(settings.backendPreference)
+
                 val engine = LiteRTEngine(applicationContext)
                 llmEngine = engine
 
-                val success = engine.initialize(modelPath, backendPref)
+                val success = engine.initialize(
+                    modelPath = modelPath,
+                    preference = backendPref,
+                    temperature = settings.temperature.toDouble(),
+                    maxTokens = settings.maxTokens,
+                    topK = settings.topK,
+                    topP = settings.topP.toDouble()
+                )
                 if (!success) {
-                    broadcastError("Failed to initialize LLM engine")
+                    broadcastError("Failed to initialize LLM engine (preference: $backendPref)")
                     return@launch
                 }
 
+                val modelName = java.io.File(modelPath).nameWithoutExtension
                 val requestLog = mutableListOf<RequestLogEntry>()
-                val server = HttpApiServer(engine) { entry ->
+                val server = HttpApiServer(engine, modelName) { entry ->
                     synchronized(requestLog) { requestLog.add(entry) }
                 }
-                val port = server.start()
+                val port = server.start(settings.serverPort)
                 apiServer = server
 
-                // Expose engine to MainActivity before broadcasting ready
                 engineInstance = engine
 
-                updateNotification("LiteRT Server Running — localhost:$port")
-                broadcastReady(port, engine.getBackend() == "GPU")
+                updateNotification("LiteRT Server Running — localhost:$port [${engine.getBackend()}]")
+                broadcastReady(port, engine.getBackend())
             } catch (e: Exception) {
                 Log.e(TAG, "Service error", e)
                 broadcastError(e.message ?: "Unknown error")
@@ -125,10 +130,10 @@ class LLMForegroundService : Service() {
         manager.notify(NOTIFICATION_ID, notification)
     }
 
-    private fun broadcastReady(port: Int, isGpu: Boolean) {
+    private fun broadcastReady(port: Int, backend: String) {
         val intent = Intent(ACTION_ENGINE_READY).apply {
             putExtra(EXTRA_SERVER_PORT, port)
-            putExtra(EXTRA_IS_GPU, isGpu)
+            putExtra(EXTRA_BACKEND, backend)
             setPackage(packageName)
         }
         sendBroadcast(intent)
