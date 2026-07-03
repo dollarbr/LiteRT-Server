@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Api
 import androidx.compose.material.icons.filled.Chat
@@ -143,7 +144,16 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                AppContent()
+                // Dark fill behind the status/nav bars; content stays clear of the
+                // notch and shrinks when the keyboard opens (safeDrawing includes IME).
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(DarkBackground)
+                        .safeDrawingPadding()
+                ) {
+                    AppContent()
+                }
             }
         }
     }
@@ -176,9 +186,9 @@ class MainActivity : ComponentActivity() {
                 onHfTokenChanged = { token ->
                     lifecycleScope.launch { settingsStore.setHfToken(token) }
                 },
-                onSamplerChanged = { temp, maxTok ->
+                onSamplerChanged = { temp, topK, topP, maxTok ->
                     lifecycleScope.launch {
-                        settingsStore.setSampler(temp, currentSettings.topK, currentSettings.topP, maxTok)
+                        settingsStore.setSampler(temp, topK, topP, maxTok)
                     }
                 },
                 onChangeModel = {},
@@ -289,9 +299,9 @@ class MainActivity : ComponentActivity() {
                         onHfTokenChanged = { token ->
                             lifecycleScope.launch { settingsStore.setHfToken(token) }
                         },
-                        onSamplerChanged = { temp, maxTok ->
+                        onSamplerChanged = { temp, topK, topP, maxTok ->
                             lifecycleScope.launch {
-                                settingsStore.setSampler(temp, currentSettings.topK, currentSettings.topP, maxTok)
+                                settingsStore.setSampler(temp, topK, topP, maxTok)
                             }
                         },
                         onChangeModel = {
@@ -416,7 +426,7 @@ class MainActivity : ComponentActivity() {
         searchHfModels("")
     }
 
-    private fun searchHfModels(query: String) {
+    private fun searchHfModels(query: String, author: String = "", sort: String = "downloads") {
         hfLoading = true
         hfError = null
         lifecycleScope.launch {
@@ -424,7 +434,7 @@ class MainActivity : ComponentActivity() {
                 val token = settingsStore.current().hfToken
                 hfHasToken = token.isNotBlank()
                 val api = com.litert.server.hf.HuggingFaceApi { token }
-                hfResults = api.searchModels(query)
+                hfResults = api.searchModels(query, author, sort)
             } catch (e: Exception) {
                 hfError = e.message
             } finally {

@@ -50,9 +50,22 @@ class HuggingFaceApi(private val tokenProvider: () -> String) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    suspend fun searchModels(query: String): List<HfModel> = withContext(Dispatchers.IO) {
+    /**
+     * @param author restrict results to a HuggingFace user/org (blank = any)
+     * @param sort HF Hub sort field: "downloads", "likes" or "lastModified"
+     */
+    suspend fun searchModels(
+        query: String,
+        author: String = "",
+        sort: String = "downloads"
+    ): List<HfModel> = withContext(Dispatchers.IO) {
         val url = buildString {
-            append("https://huggingface.co/api/models?library=litert-lm&sort=downloads&limit=50")
+            // "filter" matches the litert-lm library tag; the "library" param is ignored by the Hub API.
+            append("https://huggingface.co/api/models?filter=litert-lm&limit=50")
+            append("&sort=").append(URLEncoder.encode(sort, "UTF-8")).append("&direction=-1")
+            if (author.isNotBlank()) {
+                append("&author=").append(URLEncoder.encode(author, "UTF-8"))
+            }
             if (query.isNotBlank()) {
                 append("&search=").append(URLEncoder.encode(query, "UTF-8"))
             }
@@ -67,7 +80,7 @@ class HuggingFaceApi(private val tokenProvider: () -> String) {
     private fun get(url: String): String {
         val builder = Request.Builder()
             .url(url)
-            .header("User-Agent", "LiteRT-Server-Android/1.1")
+            .header("User-Agent", "LiteRT-Server-Android/" + com.litert.server.BuildConfig.VERSION_NAME)
         val token = tokenProvider()
         if (token.isNotBlank()) builder.header("Authorization", "Bearer $token")
         client.newCall(builder.build()).execute().use { resp ->

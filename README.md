@@ -23,7 +23,7 @@ app/src/main/java/com/litert/server/
 ├── engine/
 │   ├── LiteRTEngine.kt          — LiteRT-LM SDK wrapper (NPU/GPU/CPU backend)
 │   └── BackendType.kt           — AUTO/NPU/GPU/CPU enum with fallback chain
-├── hf/HuggingFaceApi.kt         — HuggingFace Hub search/detail client (litert-lm library filter, Bearer token)
+├── hf/HuggingFaceApi.kt         — HuggingFace Hub search/detail client (litert-lm filter, author/sort params, Bearer token)
 ├── service/
 │   ├── LLMForegroundService.kt  — Android foreground service (START_STICKY), reads settings itself
 │   └── HttpApiServer.kt         — Ktor CIO embedded HTTP server, configurable port
@@ -33,8 +33,8 @@ app/src/main/java/com/litert/server/
     ├── ServerScreen.kt          — Server control panel + request log + curl examples
     ├── DownloadScreen.kt        — Model download UI with progress
     ├── ModelLibraryScreen.kt    — Startup screen: pick from installed models, last-used highlighted (not auto-loaded)
-    ├── ModelBrowserScreen.kt    — HuggingFace search + download UI
-    └── SettingsScreen.kt        — Server port, backend preference, HF token, sampler, model management
+    ├── ModelBrowserScreen.kt    — HuggingFace search + download UI (sort + author filter chips)
+    └── SettingsScreen.kt        — Server port, backend preference, HF token, full sampler config, model management
 ```
 
 ## Setup
@@ -85,12 +85,16 @@ Backend preference is set in Settings and stored via `data/SettingsStore.kt`. `e
 
 `LiteRTEngine` logs which backend actually initialized; `/health` and the in-app UI surface the same value.
 
+## Sampler Settings
+
+Settings exposes the full sampler configuration — **temperature** (0–2), **top K** (≥1), **top P** (0–1) and **max tokens**. Each has a slider, and tapping the green value opens a dialog to type an exact value. Max tokens accepts any positive integer, but values above **8192** show a warning: the KV cache growth can freeze or crash the app due to memory pressure on-device. Sampler changes apply on the next model load.
+
 **MT6878 (Dimensity 7300) caveat**: NPU acceleration depends on a prebuilt NPU-compatible model being available for the selected model/variant. Not every `.litertlm` model on HuggingFace ships an NPU build for this chipset — if none is available, AUTO falls through to GPU (Mali-G615) automatically, and a forced NPU selection will fail loudly rather than fall back.
 
 ## Model Library
 
 - Models live in `[ExternalFilesDir]/models/`. Files previously downloaded to the external-files root (pre-fork layout) are migrated into this directory automatically on first launch.
-- The **model browser** (`ui/ModelBrowserScreen.kt`) searches HuggingFace's Hub for repos tagged `library=litert-lm` and lists their `.litertlm` files for download, with resumable progress via HTTP Range headers. Search results and download URLs are resolved dynamically at runtime — there is no fixed list of models baked into the app.
+- The **model browser** (`ui/ModelBrowserScreen.kt`) searches HuggingFace's Hub for repos tagged `litert-lm` (via the Hub API's `filter` param) and lists their `.litertlm` files for download, with resumable progress via HTTP Range headers. Results can be sorted by downloads, likes, or last update, and filtered by author (`litert-community`, `google`). Search results and download URLs are resolved dynamically at runtime — there is no fixed list of models baked into the app.
 - Gated repositories (e.g. official `google/gemma-*` models) require a HuggingFace access token. Paste one in Settings; it's sent as a `Bearer` token on Hub API requests and download requests.
 - The **model library** (`ui/ModelLibraryScreen.kt`) lists installed models on startup; the last-used model is highlighted but not auto-loaded — you pick a model explicitly each launch.
 
@@ -100,6 +104,7 @@ Backend preference is set in Settings and stored via `data/SettingsStore.kt`. `e
 - `POST_NOTIFICATIONS` requested at runtime
 - Battery optimization exemption requested on first launch
 - `ServiceCompat.startForeground()` used with correct type flags
+- Edge-to-edge: the Compose root applies `safeDrawingPadding()`, so content never draws under the notch/status bar and resizes when the keyboard opens
 
 ## Download
 

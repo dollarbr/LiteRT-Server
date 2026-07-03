@@ -1,7 +1,9 @@
 package com.litert.server.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,17 +21,31 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.litert.server.hf.HfModel
 
+private val SORT_OPTIONS = listOf(
+    "Downloads" to "downloads",
+    "Likes" to "likes",
+    "Updated" to "lastModified"
+)
+
+private val AUTHOR_OPTIONS = listOf(
+    "All" to "",
+    "litert-community" to "litert-community",
+    "google" to "google"
+)
+
 @Composable
 fun ModelBrowserScreen(
     isLoading: Boolean,
     results: List<HfModel>,
     errorMessage: String?,
     hasToken: Boolean,
-    onSearch: (String) -> Unit,
+    onSearch: (query: String, author: String, sort: String) -> Unit,
     onDownload: (HfModel) -> Unit,
     onBack: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
+    var author by remember { mutableStateOf("") }
+    var sort by remember { mutableStateOf("downloads") }
 
     Column(
         modifier = Modifier
@@ -70,14 +86,30 @@ fun ModelBrowserScreen(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Button(
-                onClick = { onSearch(query) },
+                onClick = { onSearch(query, author, sort) },
                 colors = ButtonDefaults.buttonColors(containerColor = GreenPrimary)
             ) {
                 Icon(Icons.Default.Search, contentDescription = "Search")
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        FilterChipRow(
+            label = "Sort",
+            options = SORT_OPTIONS,
+            selected = sort,
+            onSelect = { sort = it; onSearch(query, author, sort) }
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        FilterChipRow(
+            label = "Author",
+            options = AUTHOR_OPTIONS,
+            selected = author,
+            onSelect = { author = it; onSearch(query, author, sort) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         when {
             isLoading -> Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -112,6 +144,33 @@ fun ModelBrowserScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun FilterChipRow(
+    label: String,
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+    ) {
+        Text(label, color = Color.Gray, fontSize = 11.sp, modifier = Modifier.width(48.dp))
+        options.forEach { (title, value) ->
+            FilterChip(
+                selected = selected == value,
+                onClick = { onSelect(value) },
+                label = { Text(title, fontSize = 11.sp) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Color(0xFF1A3A1A),
+                    selectedLabelColor = GreenPrimary
+                ),
+                modifier = Modifier.padding(end = 6.dp)
+            )
         }
     }
 }
