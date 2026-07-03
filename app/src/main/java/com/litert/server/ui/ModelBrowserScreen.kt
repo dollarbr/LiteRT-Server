@@ -58,6 +58,7 @@ fun ModelBrowserScreen(
     var descending by remember { mutableStateOf(true) }
     var limit by remember { mutableIntStateOf(50) }
     var fitsOnly by remember { mutableStateOf(false) }
+    var bestOnly by remember { mutableStateOf(false) }
 
     // "size" is sorted locally — the Hub API has no size sort.
     val doSearch = {
@@ -67,16 +68,28 @@ fun ModelBrowserScreen(
     fun minSizeOf(model: HfModel): Long? =
         fileSizes[model.id]?.mapNotNull { it.size }?.minOrNull()
 
+    fun filenamesOf(model: HfModel): List<String> =
+        fileSizes[model.id]?.map { it.rfilename } ?: model.litertlmFilenames
+
+    fun hasNpuForDevice(model: HfModel): Boolean =
+        filenamesOf(model).any { ModelFit.npuMatchesDevice(it, deviceSpecs) }
+
     // Client-side refinements over the API results.
     var shownResults = results
     if (fileFilter.isNotBlank()) {
         shownResults = shownResults.filter { model ->
-            val names = fileSizes[model.id]?.map { it.rfilename } ?: model.litertlmFilenames
-            names.any { it.contains(fileFilter.trim(), ignoreCase = true) }
+            filenamesOf(model).any { it.contains(fileFilter.trim(), ignoreCase = true) }
         }
     }
     if (fitsOnly) {
         shownResults = shownResults.filter { ModelFit.fitsDevice(it.id, deviceSpecs) != false }
+    }
+    if (bestOnly) {
+        // Only models this device runs well: an NPU build for its SoC, or a
+        // confirmed comfortable RAM fit. NPU-accelerated ones come first.
+        shownResults = shownResults
+            .filter { hasNpuForDevice(it) || ModelFit.fitsDevice(it.id, deviceSpecs) == true }
+            .sortedByDescending { hasNpuForDevice(it) }
     }
     if (sort == "size") {
         val (known, unknown) = shownResults.partition { minSizeOf(it) != null }
@@ -213,6 +226,13 @@ fun ModelBrowserScreen(
                 colors = browserChipColors(),
                 modifier = Modifier.padding(end = 6.dp)
             )
+            FilterChip(
+                selected = bestOnly,
+                onClick = { bestOnly = !bestOnly },
+                label = { Text("⚡ Best for device", fontSize = 11.sp) },
+                colors = browserChipColors(),
+                modifier = Modifier.padding(end = 6.dp)
+            )
         }
 
         Text(
@@ -221,6 +241,7 @@ fun ModelBrowserScreen(
                 append(deviceSpecs.socModel.ifBlank { "unknown SoC" })
                 append(" · %.1f GB RAM".format(deviceSpecs.totalRamGb))
                 if (fitsOnly) append(" · hiding models too large to run")
+                if (bestOnly) append(" · showing NPU-accelerated or confirmed-fit models only")
             },
             color = Color.Gray,
             fontSize = 10.sp,
@@ -250,6 +271,7 @@ fun ModelBrowserScreen(
                                 Text(
                                     "⬇ ${model.downloads} · ♥ ${model.likes}" +
                                         (if (model.isGated) " · 🔒 gated" else "") +
+                                        (if (hasNpuForDevice(model)) " · ⚡ NPU" else "") +
                                         fitLabel(model.id, deviceSpecs) +
                                         sizeLabel(model, fileSizes),
                                     color = Color.Gray,
