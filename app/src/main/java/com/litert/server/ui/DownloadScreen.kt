@@ -27,7 +27,8 @@ fun DownloadScreen(
     etaSeconds: Int,
     errorMessage: String?,
     onRetry: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    modelName: String = ""
 ) {
     Column(
         modifier = Modifier
@@ -133,15 +134,41 @@ fun DownloadScreen(
             }
 
             AppStatus.INITIALIZING -> {
-                CircularProgressIndicator(
+                // Engine init exposes no progress callback, so the bar is
+                // indeterminate; elapsed time gives the user a live signal.
+                var elapsedSeconds by remember { mutableIntStateOf(0) }
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        kotlinx.coroutines.delay(1000)
+                        elapsedSeconds++
+                    }
+                }
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
                     color = GreenPrimary,
-                    modifier = Modifier.size(48.dp)
+                    trackColor = Color(0xFF333333)
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(20.dp))
                 Text(
                     "Loading model...",
                     color = Color.White,
                     fontSize = 16.sp,
+                    textAlign = TextAlign.Center
+                )
+                if (modelName.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        modelName,
+                        color = GreenPrimary,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "${elapsedSeconds}s elapsed",
+                    color = Color.White,
+                    fontSize = 14.sp,
                     textAlign = TextAlign.Center
                 )
                 Text(

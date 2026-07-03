@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -30,7 +31,8 @@ fun ModelLibraryScreen(
     onSelect: (LocalModel) -> Unit,
     onBrowseHuggingFace: () -> Unit,
     onImportFile: () -> Unit,
-    onDelete: (LocalModel) -> Unit
+    onDelete: (LocalModel) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -39,7 +41,18 @@ fun ModelLibraryScreen(
             .padding(24.dp)
     ) {
         Spacer(modifier = Modifier.height(24.dp))
-        Text("LiteRT Server", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "LiteRT Server",
+                color = Color.White,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.LightGray)
+            }
+        }
         Text(
             "Select a model to load",
             color = Color.Gray,

@@ -6,6 +6,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.*
@@ -31,7 +32,9 @@ fun SettingsScreen(
     onHfTokenChanged: (String) -> Unit,
     onSamplerChanged: (Float, Int) -> Unit,
     onChangeModel: () -> Unit,
-    onDeleteModel: () -> Unit
+    onDeleteModel: () -> Unit,
+    isModelLoaded: Boolean = true,
+    onBack: (() -> Unit)? = null
 ) {
     var temperature by remember { mutableFloatStateOf(settings.temperature) }
     var maxTokens by remember { mutableFloatStateOf(settings.maxTokens.toFloat()) }
@@ -48,27 +51,38 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Text("Settings", color = Color.White, style = MaterialTheme.typography.titleLarge)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text("Settings", color = Color.White, style = MaterialTheme.typography.titleLarge)
+        }
         Spacer(modifier = Modifier.height(24.dp))
 
-        SettingsCard {
-            Text("Model", color = Color.Gray, fontSize = 12.sp)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(modelPath, color = Color.White, fontSize = 13.sp)
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(onClick = onChangeModel, colors = ButtonDefaults.outlinedButtonColors(contentColor = GreenPrimary)) {
-                Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Change model")
+        if (isModelLoaded) {
+            SettingsCard {
+                Text("Model", color = Color.Gray, fontSize = 12.sp)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(modelPath, color = Color.White, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(onClick = onChangeModel, colors = ButtonDefaults.outlinedButtonColors(contentColor = GreenPrimary)) {
+                    Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Change model")
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+        }
 
         SettingsCard {
             Text("Backend", color = Color.White, fontWeight = FontWeight.SemiBold)
             Text(
-                "Active: $activeBackend · applied on next model load",
+                if (isModelLoaded) "Active: $activeBackend · applied on next model load"
+                else "Applied when a model is loaded",
                 color = Color.Gray,
                 fontSize = 12.sp
             )
@@ -120,7 +134,9 @@ fun SettingsScreen(
                 ) { Text("Apply") }
             }
             Text(
-                if (portValid) "Applying restarts the server (model stays loaded)." else "Port must be 1024–65535.",
+                if (!portValid) "Port must be 1024–65535."
+                else if (isModelLoaded) "Applying restarts the server (model stays loaded)."
+                else "Used when the server starts.",
                 color = if (portValid) Color.Gray else Color(0xFFEF4444),
                 fontSize = 11.sp
             )
@@ -202,7 +218,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        OutlinedButton(
+        if (isModelLoaded) OutlinedButton(
             onClick = { showDeleteDialog = true },
             modifier = Modifier.fillMaxWidth().height(48.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),

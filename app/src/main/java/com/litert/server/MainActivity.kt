@@ -160,7 +160,31 @@ class MainActivity : ComponentActivity() {
                 onDelete = { model ->
                     downloadManager.deleteModel(model.path)
                     refreshModelLibrary()
-                }
+                },
+                onOpenSettings = { appState = appState.copy(status = AppStatus.SETTINGS) }
+            )
+            AppStatus.SETTINGS -> SettingsScreen(
+                settings = currentSettings,
+                modelPath = "",
+                activeBackend = "",
+                onBackendSelected = { pref ->
+                    lifecycleScope.launch { settingsStore.setBackendPreference(pref) }
+                },
+                onPortChanged = { port ->
+                    lifecycleScope.launch { settingsStore.setServerPort(port) }
+                },
+                onHfTokenChanged = { token ->
+                    lifecycleScope.launch { settingsStore.setHfToken(token) }
+                },
+                onSamplerChanged = { temp, maxTok ->
+                    lifecycleScope.launch {
+                        settingsStore.setSampler(temp, currentSettings.topK, currentSettings.topP, maxTok)
+                    }
+                },
+                onChangeModel = {},
+                onDeleteModel = {},
+                isModelLoaded = false,
+                onBack = ::refreshModelLibrary
             )
             AppStatus.BROWSING -> ModelBrowserScreen(
                 isLoading = hfLoading,
@@ -180,7 +204,8 @@ class MainActivity : ComponentActivity() {
                 etaSeconds = appState.etaSeconds,
                 errorMessage = appState.errorMessage,
                 onRetry = ::retryDownload,
-                onBack = ::refreshModelLibrary
+                onBack = ::refreshModelLibrary,
+                modelName = appState.selectedModelPath.substringAfterLast('/')
             )
             AppStatus.READY -> MainTabLayout()
             AppStatus.ERROR -> {

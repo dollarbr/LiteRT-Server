@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 
 enum class AppStatus {
     MODEL_SELECTION,
+    SETTINGS,
     BROWSING,
     DOWNLOADING,
     DOWNLOAD_ERROR,
