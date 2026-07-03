@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chip/NPU motif in the app's GreenPrimary on the dark theme background.
+     All content stays inside the 66dp adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Chip body -->
+    <path
+        android:pathData="M40,36 h28 a4,4 0 0 1 4,4 v28 a4,4 0 0 1 -4,4 h-28 a4,4 0 0 1 -4,-4 v-28 a4,4 0 0 1 4,-4 z"
+        android:fillColor="#1E1E1E"
+        android:strokeColor="#4CAF50"
+        android:strokeWidth="3.5"/>
+
+    <!-- Pins: top -->
+    <path android:pathData="M45,29 v7 M54,29 v7 M63,29 v7"
+        android:strokeColor="#4CAF50" android:strokeWidth="3.5" android:strokeLineCap="round"/>
+    <!-- Pins: bottom -->
+    <path android:pathData="M45,72 v7 M54,72 v7 M63,72 v7"
+        android:strokeColor="#4CAF50" android:strokeWidth="3.5" android:strokeLineCap="round"/>
+    <!-- Pins: left -->
+    <path android:pathData="M29,45 h7 M29,54 h7 M29,63 h7"
+        android:strokeColor="#4CAF50" android:strokeWidth="3.5" android:strokeLineCap="round"/>
+    <!-- Pins: right -->
+    <path android:pathData="M72,45 h7 M72,54 h7 M72,63 h7"
+        android:strokeColor="#4CAF50" android:strokeWidth="3.5" android:strokeLineCap="round"/>
+
+    <!-- Inner core: chat spark -->
+    <path
+        android:pathData="M54,45 a9,9 0 1 0 0.01,0 z"
+        android:fillColor="#4CAF50"/>
+    <path
+        android:pathData="M50,54 h8 M54,50 v8"
+        android:strokeColor="#121212" android:strokeWidth="2.5" android:strokeLineCap="round"/>
+</vector>
