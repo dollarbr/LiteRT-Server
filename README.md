@@ -101,8 +101,6 @@ Backend preference is set in Settings and stored via `data/SettingsStore.kt`. `e
 - Battery optimization exemption requested on first launch
 - `ServiceCompat.startForeground()` used with correct type flags
 
-## APK Link
+## Download
 
-https://drive.google.com/file/d/147EVwUyKYFmUYRys2-xXf1qiRUDXqL50/view?usp=sharing
-
-**Note:** this is an older pre-fork build and does not reflect the current state of this repository (NPU/Android 16 support, OpenAI-compatible routes, etc.). Build from source (`./gradlew installDebug`) to get the latest version.
+Prebuilt debug APKs are published on the [Releases page](https://github.com/dollarbr/LiteRT-Server/releases). Every push to `main` also uploads an APK artifact to the [Build APK workflow](https://github.com/dollarbr/LiteRT-Server/actions) (7-day retention).
