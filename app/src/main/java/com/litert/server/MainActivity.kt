@@ -278,8 +278,10 @@ class MainActivity : ComponentActivity() {
                             stopService(Intent(this@MainActivity, LLMForegroundService::class.java))
                             liteRTEngine = null
                             downloadManager.deleteModel(appState.selectedModelPath)
-                            lifecycleScope.launch { settingsStore.setLastModelPath("") }
-                            refreshModelLibrary()
+                            lifecycleScope.launch {
+                                settingsStore.setLastModelPath("")
+                                refreshModelLibrary()
+                            }
                         }
                     )
                 }
