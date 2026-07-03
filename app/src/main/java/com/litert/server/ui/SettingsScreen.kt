@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Eject
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,6 +37,7 @@ fun SettingsScreen(
     onHfTokenChanged: (String) -> Unit,
     onSamplerChanged: (temperature: Float, topK: Int, topP: Float, maxTokens: Int) -> Unit,
     onChangeModel: () -> Unit,
+    onUnloadModel: () -> Unit,
     onDeleteModel: () -> Unit,
     isModelLoaded: Boolean = true,
     onBack: (() -> Unit)? = null
@@ -77,11 +79,24 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(modelPath, color = Color.White, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(onClick = onChangeModel, colors = ButtonDefaults.outlinedButtonColors(contentColor = GreenPrimary)) {
-                    Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Change model")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onChangeModel, colors = ButtonDefaults.outlinedButtonColors(contentColor = GreenPrimary)) {
+                        Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Change model")
+                    }
+                    OutlinedButton(onClick = onUnloadModel, colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFFB74D))) {
+                        Icon(Icons.Default.Eject, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Unload")
+                    }
                 }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Unload stops the engine and server and frees the model's memory.",
+                    color = Color.Gray,
+                    fontSize = 11.sp
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))

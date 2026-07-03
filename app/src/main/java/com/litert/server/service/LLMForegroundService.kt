@@ -54,6 +54,15 @@ class LLMForegroundService : Service() {
 
         scope.launch {
             try {
+                // A second start (model switch) reuses this service instance:
+                // free the previous engine's native memory and release the port
+                // before loading the new model.
+                engineInstance = null
+                apiServer?.stop()
+                apiServer = null
+                llmEngine?.shutdown()
+                llmEngine = null
+
                 val settings = com.litert.server.data.SettingsStore(applicationContext).current()
                 val backendPref = com.litert.server.engine.BackendType.fromString(settings.backendPreference)
 

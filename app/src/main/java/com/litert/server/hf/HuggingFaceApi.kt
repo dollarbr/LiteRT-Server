@@ -13,8 +13,18 @@ import java.util.concurrent.TimeUnit
 data class HfModel(
     val id: String,
     val downloads: Long = 0,
-    val likes: Long = 0
-)
+    val likes: Long = 0,
+    // The Hub sends false for open repos and "auto"/"manual" for gated ones.
+    val gated: kotlinx.serialization.json.JsonElement? = null
+) {
+    val isGated: Boolean
+        get() = gated != null &&
+            gated !is kotlinx.serialization.json.JsonNull &&
+            gated.toString() != "false"
+}
+
+/** HTTP failure from the Hub API, keeping the status code for gated-repo handling. */
+class HfHttpException(val code: Int) : Exception("HuggingFace API error: HTTP $code")
 
 @Serializable
 data class HfSibling(
@@ -40,6 +50,19 @@ object HfJson {
 }
 
 /**
+ * Everything the Hub `/api/models` endpoint accepts for listing models.
+ * `sort` is one of "downloads", "likes", "lastModified", "createdAt",
+ * "trendingScore"; `descending` maps to direction=-1/1.
+ */
+data class HfSearchParams(
+    val query: String = "",
+    val author: String = "",
+    val sort: String = "downloads",
+    val descending: Boolean = true,
+    val limit: Int = 50
+)
+
+/**
  * Minimal HuggingFace Hub client. Token is optional for search but required
  * to download gated repos (e.g. google/gemma models).
  */
@@ -50,28 +73,23 @@ class HuggingFaceApi(private val tokenProvider: () -> String) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    /**
-     * @param author restrict results to a HuggingFace user/org (blank = any)
-     * @param sort HF Hub sort field: "downloads", "likes" or "lastModified"
-     */
-    suspend fun searchModels(
-        query: String,
-        author: String = "",
-        sort: String = "downloads"
-    ): List<HfModel> = withContext(Dispatchers.IO) {
-        val url = buildString {
-            // "filter" matches the litert-lm library tag; the "library" param is ignored by the Hub API.
-            append("https://huggingface.co/api/models?filter=litert-lm&limit=50")
-            append("&sort=").append(URLEncoder.encode(sort, "UTF-8")).append("&direction=-1")
-            if (author.isNotBlank()) {
-                append("&author=").append(URLEncoder.encode(author, "UTF-8"))
+    suspend fun searchModels(params: HfSearchParams = HfSearchParams()): List<HfModel> =
+        withContext(Dispatchers.IO) {
+            val url = buildString {
+                // "filter" matches the litert-lm library tag; the "library" param is ignored by the Hub API.
+                append("https://huggingface.co/api/models?filter=litert-lm")
+                append("&limit=").append(params.limit.coerceIn(1, 100))
+                append("&sort=").append(URLEncoder.encode(params.sort, "UTF-8"))
+                append("&direction=").append(if (params.descending) "-1" else "1")
+                if (params.author.isNotBlank()) {
+                    append("&author=").append(URLEncoder.encode(params.author.trim(), "UTF-8"))
+                }
+                if (params.query.isNotBlank()) {
+                    append("&search=").append(URLEncoder.encode(params.query, "UTF-8"))
+                }
             }
-            if (query.isNotBlank()) {
-                append("&search=").append(URLEncoder.encode(query, "UTF-8"))
-            }
+            HfJson.parseModels(get(url))
         }
-        HfJson.parseModels(get(url))
-    }
 
     suspend fun modelDetail(modelId: String): HfModelDetail = withContext(Dispatchers.IO) {
         HfJson.parseModelDetail(get("https://huggingface.co/api/models/$modelId?blobs=true"))
@@ -85,7 +103,7 @@ class HuggingFaceApi(private val tokenProvider: () -> String) {
         if (token.isNotBlank()) builder.header("Authorization", "Bearer $token")
         client.newCall(builder.build()).execute().use { resp ->
             if (!resp.isSuccessful) {
-                throw Exception("HuggingFace API error: HTTP ${resp.code}")
+                throw HfHttpException(resp.code)
             }
             return resp.body?.string() ?: throw Exception("Empty response from HuggingFace")
         }

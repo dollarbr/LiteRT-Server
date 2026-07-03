@@ -59,6 +59,8 @@ class MainActivity : ComponentActivity() {
     private var hfLoading by mutableStateOf(false)
     private var hfError by mutableStateOf<String?>(null)
     private var hfHasToken by mutableStateOf(false)
+    private var hfVariantPick by mutableStateOf<Pair<String, List<com.litert.server.hf.HfSibling>>?>(null)
+    private val deviceSpecs by lazy { DeviceSpecs.from(this) }
 
     // Holds reference to the engine once the service boots it.
     // We bind to the service via a shared singleton so the UI can call it directly.
@@ -192,19 +194,35 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onChangeModel = {},
+                onUnloadModel = {},
                 onDeleteModel = {},
                 isModelLoaded = false,
                 onBack = ::refreshModelLibrary
             )
-            AppStatus.BROWSING -> ModelBrowserScreen(
-                isLoading = hfLoading,
-                results = hfResults,
-                errorMessage = hfError,
-                hasToken = hfHasToken,
-                onSearch = ::searchHfModels,
-                onDownload = ::downloadHfModel,
-                onBack = ::refreshModelLibrary
-            )
+            AppStatus.BROWSING -> {
+                ModelBrowserScreen(
+                    isLoading = hfLoading,
+                    results = hfResults,
+                    errorMessage = hfError,
+                    hasToken = hfHasToken,
+                    deviceSpecs = deviceSpecs,
+                    onSearch = ::searchHfModels,
+                    onDownload = ::downloadHfModel,
+                    onBack = ::refreshModelLibrary
+                )
+                hfVariantPick?.let { (modelId, files) ->
+                    VariantPickerDialog(
+                        modelId = modelId,
+                        files = files,
+                        deviceSpecs = deviceSpecs,
+                        onPick = { file ->
+                            hfVariantPick = null
+                            startVariantDownload(modelId, file)
+                        },
+                        onDismiss = { hfVariantPick = null }
+                    )
+                }
+            }
             AppStatus.DOWNLOADING, AppStatus.DOWNLOAD_ERROR, AppStatus.INITIALIZING -> DownloadScreen(
                 status = appState.status,
                 progressPercent = appState.downloadProgress,
@@ -304,11 +322,8 @@ class MainActivity : ComponentActivity() {
                                 settingsStore.setSampler(temp, topK, topP, maxTok)
                             }
                         },
-                        onChangeModel = {
-                            stopService(Intent(this@MainActivity, LLMForegroundService::class.java))
-                            liteRTEngine = null
-                            refreshModelLibrary()
-                        },
+                        onChangeModel = ::unloadModel,
+                        onUnloadModel = ::unloadModel,
                         onDeleteModel = {
                             stopService(Intent(this@MainActivity, LLMForegroundService::class.java))
                             liteRTEngine = null
@@ -423,10 +438,10 @@ class MainActivity : ComponentActivity() {
 
     private fun openModelBrowser() {
         appState = appState.copy(status = AppStatus.BROWSING)
-        searchHfModels("")
+        searchHfModels(com.litert.server.hf.HfSearchParams())
     }
 
-    private fun searchHfModels(query: String, author: String = "", sort: String = "downloads") {
+    private fun searchHfModels(params: com.litert.server.hf.HfSearchParams) {
         hfLoading = true
         hfError = null
         lifecycleScope.launch {
@@ -434,7 +449,7 @@ class MainActivity : ComponentActivity() {
                 val token = settingsStore.current().hfToken
                 hfHasToken = token.isNotBlank()
                 val api = com.litert.server.hf.HuggingFaceApi { token }
-                hfResults = api.searchModels(query, author, sort)
+                hfResults = api.searchModels(params)
             } catch (e: Exception) {
                 hfError = e.message
             } finally {
@@ -444,16 +459,37 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun downloadHfModel(model: com.litert.server.hf.HfModel) {
+        // Gated repo we can't access (no token yet): send the user straight to
+        // the model page to request access / accept the license.
+        if (model.isGated && !hfHasToken) {
+            openModelPage(model.id)
+            return
+        }
         hfLoading = true
         lifecycleScope.launch {
             try {
                 val token = settingsStore.current().hfToken
                 val api = com.litert.server.hf.HuggingFaceApi { token }
                 val detail = api.modelDetail(model.id)
-                val file = com.litert.server.hf.HfJson.litertlmFiles(detail).firstOrNull()
-                    ?: throw Exception("No .litertlm file in ${model.id}")
-                val url = "https://huggingface.co/${model.id}/resolve/main/${file.rfilename}"
-                startDownload(url, file.rfilename, file.size)
+                val files = com.litert.server.hf.HfJson.litertlmFiles(detail)
+                when {
+                    files.isEmpty() -> throw Exception("No .litertlm file in ${model.id}")
+                    files.size == 1 -> startVariantDownload(model.id, files.first())
+                    else -> {
+                        // Multiple variants — let the user pick (dialog suggests
+                        // the best one for this device's SoC/RAM).
+                        hfVariantPick = model.id to files
+                        hfLoading = false
+                    }
+                }
+            } catch (e: com.litert.server.hf.HfHttpException) {
+                hfLoading = false
+                if (e.code == 401 || e.code == 403) {
+                    // Token lacks access to this gated repo — open its page.
+                    openModelPage(model.id)
+                } else {
+                    hfError = e.message
+                }
             } catch (e: Exception) {
                 hfError = e.message
                 hfLoading = false
@@ -461,12 +497,38 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun openModelPage(modelId: String) {
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/$modelId")))
+        Toast.makeText(
+            this,
+            "Gated model — accept the license on the HuggingFace page, then try again",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    private fun startVariantDownload(modelId: String, file: com.litert.server.hf.HfSibling) {
+        val url = "https://huggingface.co/$modelId/resolve/main/${file.rfilename}"
+        startDownload(url, file.rfilename, file.size)
+    }
+
     private fun selectAndLoadModel(model: com.litert.server.download.LocalModel) {
+        // Unload whatever is currently loaded before bringing up the new model
+        // (the service also guards this, but dropping our reference first keeps
+        // the UI from talking to a dying engine).
+        liteRTEngine = null
+        chatMessages.clear()
         lifecycleScope.launch {
             settingsStore.setLastModelPath(model.path)
             appState = appState.copy(selectedModelPath = model.path)
             startEngineService(model.path)
         }
+    }
+
+    private fun unloadModel() {
+        stopService(Intent(this, LLMForegroundService::class.java))
+        liteRTEngine = null
+        chatMessages.clear()
+        refreshModelLibrary()
     }
 
     private fun startDownload(url: String, filename: String, expectedBytes: Long?) {
