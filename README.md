@@ -46,7 +46,11 @@ app/src/main/java/com/litert/server/
 
 ## HTTP API (Ktor, configurable port)
 
-The server listens on the port configured in Settings (default `8080`; if that port is taken it tries the next two ports). Once a model is loaded and the server is running:
+The server listens on the port configured in Settings (default `8080`, valid range `1024`–`65535`; if that port is taken it tries the next two ports).
+
+**Security note:** the server binds to all network interfaces (`0.0.0.0`), not just `localhost` — it is reachable from any other device on the same local network, and there is no authentication. This is by design, to let other devices on your LAN talk to the model server. Be aware that the `/vision` endpoint accepts a device file path and reads that file directly, so anyone who can reach the port can ask the device to read arbitrary files it has access to. Only run this on networks you trust.
+
+Once a model is loaded and the server is running:
 
 ```bash
 # Health check — "backend" reports which backend the engine actually initialized with (NPU/GPU/CPU)
@@ -100,3 +104,5 @@ Backend preference is set in Settings and stored via `data/SettingsStore.kt`. `e
 ## APK Link
 
 https://drive.google.com/file/d/147EVwUyKYFmUYRys2-xXf1qiRUDXqL50/view?usp=sharing
+
+**Note:** this is an older pre-fork build and does not reflect the current state of this repository (NPU/Android 16 support, OpenAI-compatible routes, etc.). Build from source (`./gradlew installDebug`) to get the latest version.

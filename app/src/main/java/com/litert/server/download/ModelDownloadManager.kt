@@ -93,7 +93,8 @@ class ModelDownloadManager(private val context: Context) {
     ): Flow<DownloadProgress> = flow {
         modelsDir.mkdirs()
         val destFile = File(modelsDir, filename)
-        var existingBytes = if (destFile.exists()) destFile.length() else 0L
+        val partFile = File(modelsDir, "$filename.part")
+        var existingBytes = if (partFile.exists()) partFile.length() else 0L
 
         val requestBuilder = Request.Builder()
             .url(url)
@@ -134,7 +135,7 @@ class ModelDownloadManager(private val context: Context) {
         var lastSpeedTime = System.currentTimeMillis()
         var lastSpeedBytes = downloadedBytes
 
-        val outputStream = FileOutputStream(destFile, existingBytes > 0)
+        val outputStream = FileOutputStream(partFile, existingBytes > 0)
 
         body.byteStream().use { inputStream ->
             outputStream.use { outStream ->
@@ -167,9 +168,14 @@ class ModelDownloadManager(private val context: Context) {
             }
         }
 
-        if (destFile.length() < MIN_VALID_BYTES) {
-            destFile.delete()
+        if (partFile.length() < MIN_VALID_BYTES) {
+            partFile.delete()
             throw Exception("Downloaded file too small — may be corrupted. Please retry.")
+        }
+
+        if (!partFile.renameTo(destFile)) {
+            partFile.copyTo(destFile, overwrite = true)
+            partFile.delete()
         }
 
         emit(

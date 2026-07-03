@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
-    <!-- Foreground Service — Android 15 requires exact type -->
+    <!-- Foreground Service — Android 16 requires exact type -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
@@ -29,7 +29,7 @@
         android:theme="@style/Theme.LiteRTServer"
         android:hardwareAccelerated="true">
 
-        <!-- CRITICAL: These two lines unlock Adreno GPU for LiteRT -->
+        <!-- CRITICAL: These two lines unlock Mali-G615 GPU (and NPU) acceleration for LiteRT -->
         <uses-native-library android:name="libvndksupport.so" android:required="false"/>
         <uses-native-library android:name="libOpenCL.so" android:required="false"/>
 
@@ -43,7 +43,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Foreground Service declaration — Android 15 requires foregroundServiceType -->
+        <!-- Foreground Service declaration — Android 16 requires foregroundServiceType -->
         <service
             android:name=".service.LLMForegroundService"
             android:exported="false"

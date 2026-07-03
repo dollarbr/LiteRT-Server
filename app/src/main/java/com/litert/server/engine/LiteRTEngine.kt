@@ -53,6 +53,7 @@ class LiteRTEngine(private val context: Context) {
                     modelPath = modelPath,
                     backend = backend,
                     visionBackend = visionBackend,
+                    maxNumTokens = maxTokens,
                     cacheDir = context.cacheDir.absolutePath
                 )
                 attemptEngine = Engine(config)
