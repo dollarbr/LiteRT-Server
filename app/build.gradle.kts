@@ -12,12 +12,32 @@ android {
         applicationId = "com.litert.server"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.1.4"
+        versionCode = 5
+        versionName = "0.1.5"
     }
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+    // Fixed keystore committed to the repo so every build (local or CI) has the
+    // same signature — otherwise each CI runner generates its own debug key and
+    // installing a new APK over the old one fails with UPDATE_INCOMPATIBLE.
+    // This is a shared debug-style key, NOT a secret; don't reuse it for Play releases.
+    signingConfigs {
+        create("shared") {
+            storeFile = rootProject.file("signing/shared.keystore")
+            storePassword = "litertserver"
+            keyAlias = "litertserver"
+            keyPassword = "litertserver"
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("shared")
+        }
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("shared")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

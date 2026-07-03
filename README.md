@@ -111,3 +111,5 @@ Settings exposes the full sampler configuration — **temperature** (0–2), **t
 ## Download
 
 Prebuilt debug APKs are published on the [Releases page](https://github.com/dollarbr/LiteRT-Server/releases). Every push to `main` also uploads an APK artifact to the [Build APK workflow](https://github.com/dollarbr/LiteRT-Server/actions) (7-day retention).
+
+All APKs are signed with the shared keystore committed at `signing/shared.keystore`, so newer releases install directly over older ones as updates. (This key is intentionally public, like a debug key — never reuse it for Play Store distribution.) Releases up to v0.1.4 were signed with throwaway CI keys; updating from one of those requires uninstalling once before installing v0.1.5+.
