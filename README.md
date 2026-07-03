@@ -1,32 +1,40 @@
 # LiteRT Server — Android Studio Project
 
-A complete native Android application in Kotlin that runs Google's Gemma 4 E2B multimodal LLM
-locally on-device via Google's LiteRT-LM SDK.
+A complete native Android application in Kotlin that runs multimodal LLMs (Gemma and other
+LiteRT-LM-compatible models, downloaded dynamically from HuggingFace) locally on-device via
+Google's LiteRT-LM SDK, with NPU/GPU/CPU backend selection.
 
 ## Requirements
 
-- Android Studio Ladybug (2024.2.1) or newer
-- Android SDK 35 (Android 15)
+- Android Studio (current stable) or newer
+- Android SDK 36 (Android 16)
 - JDK 17
-- Target device: Android 8.0+ (API 26+) — tested on OnePlus 6 / Snapdragon 845 / Adreno 630
+- Target device: Android 8.0+ (API 26+) — developed against Moto Edge 60 / MediaTek Dimensity 7300 (MT6878) / Mali-G615 / Android 16
 
 ## Project Structure
 
 ```
 app/src/main/java/com/litert/server/
 ├── MainActivity.kt              — Entry point, navigation, state management
-├── data/AppState.kt             — All data classes and app state enum
-├── download/ModelDownloadManager.kt  — HuggingFace model download with resume + progress
-├── engine/LiteRTEngine.kt       — LiteRT-LM SDK wrapper (GPU/CPU backend)
+├── data/
+│   ├── AppState.kt              — All data classes and app state enum
+│   └── SettingsStore.kt         — DataStore-backed settings (port, backend, HF token, last model, sampler)
+├── download/ModelDownloadManager.kt  — HuggingFace model download with resume + progress, models dir + legacy migration
+├── engine/
+│   ├── LiteRTEngine.kt          — LiteRT-LM SDK wrapper (NPU/GPU/CPU backend)
+│   └── BackendType.kt           — AUTO/NPU/GPU/CPU enum with fallback chain
+├── hf/HuggingFaceApi.kt         — HuggingFace Hub search/detail client (litert-lm library filter, Bearer token)
 ├── service/
-│   ├── LLMForegroundService.kt  — Android foreground service (START_STICKY)
-│   └── HttpApiServer.kt         — Ktor CIO embedded HTTP server on port 8080
+│   ├── LLMForegroundService.kt  — Android foreground service (START_STICKY), reads settings itself
+│   └── HttpApiServer.kt         — Ktor CIO embedded HTTP server, configurable port
 └── ui/
     ├── ChatScreen.kt            — Text chat with streaming tokens
     ├── VisionScreen.kt          — Image + text analysis
     ├── ServerScreen.kt          — Server control panel + request log + curl examples
     ├── DownloadScreen.kt        — Model download UI with progress
-    └── SettingsScreen.kt        — GPU toggle, temperature, max tokens, model management
+    ├── ModelLibraryScreen.kt    — Startup screen: pick from installed models, last-used highlighted (not auto-loaded)
+    ├── ModelBrowserScreen.kt    — HuggingFace search + download UI
+    └── SettingsScreen.kt        — Server port, backend preference, HF token, sampler, model management
 ```
 
 ## Setup
@@ -34,47 +42,57 @@ app/src/main/java/com/litert/server/
 1. Clone / open this folder in Android Studio
 2. Let Gradle sync (it will download ~200MB of dependencies)
 3. Build and install on your device: `./gradlew installDebug`
-4. On first launch the app will prompt you to download the model (~2.58 GB from HuggingFace)
+4. On first launch the app opens the **model library** (empty on a fresh install). Use the model browser to search HuggingFace for a `.litertlm` model and download it, or import a file directly.
 
-## HTTP API (Ktor on localhost:8080)
+## HTTP API (Ktor, configurable port)
 
-Once the model is loaded and the server is running:
+The server listens on the port configured in Settings (default `8080`; if that port is taken it tries the next two ports). Once a model is loaded and the server is running:
 
 ```bash
-# Health check
+# Health check — "backend" reports which backend the engine actually initialized with (NPU/GPU/CPU)
 curl http://localhost:8080/health
 
-# Chat
+# OpenAI-compatible routes
+curl http://localhost:8080/v1/models
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"x","messages":[{"role":"user","content":"Hello!"}],"stream":true}'
+
+# Legacy routes (kept for backward compat)
 curl -X POST http://localhost:8080/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello!"}'
 
-# Vision (image analysis)
 curl -X POST http://localhost:8080/vision \
   -H "Content-Type: application/json" \
   -d '{"imagePath":"/sdcard/DCIM/photo.jpg","prompt":"Describe this image"}'
 
-# Reset conversation history
 curl -X POST http://localhost:8080/reset
 ```
 
-## GPU Acceleration
+`/health` returns a `backend` field (string, e.g. `"NPU"`, `"GPU"`, `"CPU"`) instead of the old boolean `gpu` field. `/v1/models` returns the currently loaded model's name (derived from its filename), not a fixed model id.
 
-The app uses the Adreno 630's OpenCL 2.0 support via LiteRT-LM's GPU backend.
-`libOpenCL.so` and `libvndksupport.so` are declared in the manifest.
-If GPU init fails, the engine automatically falls back to CPU.
+## Backend Selection (NPU / GPU / CPU)
 
-## Model
+Backend preference is set in Settings and stored via `data/SettingsStore.kt`. `engine/BackendType.kt` defines the fallback behavior:
 
-- **Model**: Gemma 4 E2B Instruction-tuned (LiteRT format)
-- **URL**: `https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm`
-- **Size**: ~2.58 GB
-- **Saved to**: `[ExternalFilesDir]/gemma4.litertlm`
-- **Resume**: Partial downloads are resumed automatically using HTTP Range headers
+- **AUTO** (default): tries **NPU → GPU → CPU**, in order, until one initializes successfully.
+- **Forced backend** (NPU, GPU, or CPU explicitly selected): only that backend is attempted — it never silently falls back. If it fails to initialize, the engine reports an error instead of degrading.
 
-## Android 15 Notes
+`LiteRTEngine` logs which backend actually initialized; `/health` and the in-app UI surface the same value.
 
-- Foreground service type: `specialUse|dataSync` (required by API 35)
+**MT6878 (Dimensity 7300) caveat**: NPU acceleration depends on a prebuilt NPU-compatible model being available for the selected model/variant. Not every `.litertlm` model on HuggingFace ships an NPU build for this chipset — if none is available, AUTO falls through to GPU (Mali-G615) automatically, and a forced NPU selection will fail loudly rather than fall back.
+
+## Model Library
+
+- Models live in `[ExternalFilesDir]/models/`. Files previously downloaded to the external-files root (pre-fork layout) are migrated into this directory automatically on first launch.
+- The **model browser** (`ui/ModelBrowserScreen.kt`) searches HuggingFace's Hub for repos tagged `library=litert-lm` and lists their `.litertlm` files for download, with resumable progress via HTTP Range headers. Search results and download URLs are resolved dynamically at runtime — there is no fixed list of models baked into the app.
+- Gated repositories (e.g. official `google/gemma-*` models) require a HuggingFace access token. Paste one in Settings; it's sent as a `Bearer` token on Hub API requests and download requests.
+- The **model library** (`ui/ModelLibraryScreen.kt`) lists installed models on startup; the last-used model is highlighted but not auto-loaded — you pick a model explicitly each launch.
+
+## Android 16 Notes
+
+- Foreground service type: `specialUse|dataSync`
 - `POST_NOTIFICATIONS` requested at runtime
 - Battery optimization exemption requested on first launch
 - `ServiceCompat.startForeground()` used with correct type flags
