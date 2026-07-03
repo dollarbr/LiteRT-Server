@@ -16,7 +16,7 @@ A native Android app (Kotlin + Jetpack Compose) that runs multimodal LLMs (Gemma
 
 - Requires JDK 17 and Android SDK 36. minSdk 26, compileSdk/targetSdk 36.
 - LiteRT-LM SDK: `com.google.ai.edge.litertlm:litertlm-android:0.13.1`.
-- `gradle/wrapper/gradle-wrapper.jar` is NOT committed. CI (`.github/workflows/build.yml`) downloads it from the Gradle v8.9.0 tag before building; locally you need it present (or a system Gradle 8.9) for `./gradlew` to work.
+- `gradle/wrapper/gradle-wrapper.jar` is NOT committed. CI (`.github/workflows/build.yml`) downloads it from the Gradle v8.13.0 tag before building; locally you need it present (or a system Gradle 8.13) for `./gradlew` to work.
 - The app can only be meaningfully exercised on a physical device — inference needs a `.litertlm` model downloaded via the in-app model browser (or side-loaded via the file picker). Target device for this branch's work: Moto Edge 60 / Dimensity 7300 (MT6878) / Mali-G615 / Android 16.
 
 ## Architecture
