@@ -32,7 +32,15 @@ object ModelFit {
 
     private val PARAMS_B = Regex("""(\d+(?:[._]\d+)?)\s*[bB](?![a-zA-Z0-9])""")
     private val PARAMS_M = Regex("""(\d+)\s*[mM](?![a-zA-Z0-9])""")
-    private val NPU_SOC = Regex("""\.(mediatek|qualcomm)\.([a-z0-9_-]+)\.""", RegexOption.IGNORE_CASE)
+
+    // Per-chipset builds on the Hub use several naming conventions:
+    //   "Qwen3-0.6B.mediatek.mt6993.litertlm", "Gemma3-1B-IT_q4_ekv1280_mt6989.litertlm",
+    //   "gemma-4-E2B-it_qualcomm_sm8750.litertlm", "..._Google_Tensor_G5.litertlm", "..._intel_LNL.litertlm"
+    private val SOC_TOKEN = Regex("""(?:^|[._\-])((?:mt|sm|qcs)\d{3,5})(?=[._\-])""", RegexOption.IGNORE_CASE)
+    private val VENDOR = Regex(
+        """(?:^|[._\-])(mediatek|qualcomm|samsung|intel|(?:google[._\-])?tensor[._\-]g\d)""",
+        RegexOption.IGNORE_CASE
+    )
 
     /**
      * Parameter count in billions parsed from a model id,
@@ -47,17 +55,25 @@ object ModelFit {
     }
 
     /**
-     * SoC tag of a per-chipset NPU build filename
-     * (e.g. "gemma3-1b-it-int4.mediatek.mt6991.litertlm" -> "mt6991"),
+     * SoC/vendor tag of a per-chipset NPU build filename
+     * (e.g. "gemma3-1b-it-int4.mediatek.mt6991.litertlm" -> "mt6991",
+     * "..._Google_Tensor_G5.litertlm" -> "google_tensor_g5"),
      * or null when the file is a generic GPU/CPU build.
      */
-    fun npuSoc(filename: String): String? =
-        NPU_SOC.find(filename)?.groupValues?.get(2)?.lowercase()
+    fun npuSoc(filename: String): String? {
+        SOC_TOKEN.find(filename)?.let { return it.groupValues[1].lowercase() }
+        VENDOR.find(filename)?.let { return it.groupValues[1].lowercase().replace(Regex("[._\\-]"), "_") }
+        return null
+    }
 
     /** True when an NPU build's SoC tag matches this device's SoC. */
     fun npuMatchesDevice(filename: String, specs: DeviceSpecs): Boolean {
-        val soc = npuSoc(filename) ?: return false
-        return specs.socModel.isNotBlank() && soc.equals(specs.socModel, ignoreCase = true)
+        if (specs.socModel.isBlank() || npuSoc(filename) == null) return false
+        // Compare with separators stripped so "Tensor G5" matches "_Google_Tensor_G5"
+        // and "MT6878" matches "_ekv1280_mt6878".
+        val file = filename.lowercase().replace(Regex("[^a-z0-9]"), "")
+        val soc = specs.socModel.lowercase().replace(Regex("[^a-z0-9]"), "")
+        return file.contains(soc)
     }
 
     /** Rough RAM needed to run a model: int4/int8 weights plus KV-cache/runtime overhead. */

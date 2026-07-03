@@ -60,6 +60,9 @@ class MainActivity : ComponentActivity() {
     private var hfError by mutableStateOf<String?>(null)
     private var hfHasToken by mutableStateOf(false)
     private var hfVariantPick by mutableStateOf<Pair<String, List<com.litert.server.hf.HfSibling>>?>(null)
+    // modelId -> .litertlm files with sizes, filled in the background after each
+    // search (the Hub listing endpoint returns filenames but never sizes).
+    private val hfFileSizes = mutableStateMapOf<String, List<com.litert.server.hf.HfSibling>>()
     private val deviceSpecs by lazy { DeviceSpecs.from(this) }
 
     // Holds reference to the engine once the service boots it.
@@ -206,6 +209,7 @@ class MainActivity : ComponentActivity() {
                     errorMessage = hfError,
                     hasToken = hfHasToken,
                     deviceSpecs = deviceSpecs,
+                    fileSizes = hfFileSizes,
                     onSearch = ::searchHfModels,
                     onDownload = ::downloadHfModel,
                     onBack = ::refreshModelLibrary
@@ -450,10 +454,33 @@ class MainActivity : ComponentActivity() {
                 hfHasToken = token.isNotBlank()
                 val api = com.litert.server.hf.HuggingFaceApi { token }
                 hfResults = api.searchModels(params)
+                prefetchFileSizes(hfResults, api)
             } catch (e: Exception) {
                 hfError = e.message
             } finally {
                 hfLoading = false
+            }
+        }
+    }
+
+    /** Fills [hfFileSizes] in the background (a few requests at a time) so the
+     * browser can show sizes and sort by them; failures just leave the size unknown. */
+    private fun prefetchFileSizes(
+        models: List<com.litert.server.hf.HfModel>,
+        api: com.litert.server.hf.HuggingFaceApi
+    ) {
+        val semaphore = kotlinx.coroutines.sync.Semaphore(6)
+        models.filter { it.id !in hfFileSizes && it.litertlmFilenames.isNotEmpty() }.forEach { model ->
+            lifecycleScope.launch(Dispatchers.IO) {
+                semaphore.acquire()
+                try {
+                    val files = com.litert.server.hf.HfJson.litertlmFiles(api.modelDetail(model.id))
+                    withContext(Dispatchers.Main) { hfFileSizes[model.id] = files }
+                } catch (_: Exception) {
+                    // Size stays unknown (e.g. gated repo without access).
+                } finally {
+                    semaphore.release()
+                }
             }
         }
     }
@@ -470,8 +497,8 @@ class MainActivity : ComponentActivity() {
             try {
                 val token = settingsStore.current().hfToken
                 val api = com.litert.server.hf.HuggingFaceApi { token }
-                val detail = api.modelDetail(model.id)
-                val files = com.litert.server.hf.HfJson.litertlmFiles(detail)
+                val files = hfFileSizes[model.id]
+                    ?: com.litert.server.hf.HfJson.litertlmFiles(api.modelDetail(model.id))
                 when {
                     files.isEmpty() -> throw Exception("No .litertlm file in ${model.id}")
                     files.size == 1 -> startVariantDownload(model.id, files.first())

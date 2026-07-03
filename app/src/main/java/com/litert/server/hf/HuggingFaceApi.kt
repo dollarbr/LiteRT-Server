@@ -15,12 +15,17 @@ data class HfModel(
     val downloads: Long = 0,
     val likes: Long = 0,
     // The Hub sends false for open repos and "auto"/"manual" for gated ones.
-    val gated: kotlinx.serialization.json.JsonElement? = null
+    val gated: kotlinx.serialization.json.JsonElement? = null,
+    // Populated by full=true listings: filenames only, sizes are null.
+    val siblings: List<HfSibling> = emptyList()
 ) {
     val isGated: Boolean
         get() = gated != null &&
             gated !is kotlinx.serialization.json.JsonNull &&
             gated.toString() != "false"
+
+    val litertlmFilenames: List<String>
+        get() = siblings.map { it.rfilename }.filter { it.endsWith(".litertlm") }
 }
 
 /** HTTP failure from the Hub API, keeping the status code for gated-repo handling. */
@@ -77,7 +82,8 @@ class HuggingFaceApi(private val tokenProvider: () -> String) {
         withContext(Dispatchers.IO) {
             val url = buildString {
                 // "filter" matches the litert-lm library tag; the "library" param is ignored by the Hub API.
-                append("https://huggingface.co/api/models?filter=litert-lm")
+                // full=true adds sibling filenames (no sizes) for filename filtering.
+                append("https://huggingface.co/api/models?filter=litert-lm&full=true")
                 append("&limit=").append(params.limit.coerceIn(1, 100))
                 append("&sort=").append(URLEncoder.encode(params.sort, "UTF-8"))
                 append("&direction=").append(if (params.descending) "-1" else "1")

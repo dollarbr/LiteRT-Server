@@ -31,7 +31,8 @@ private val SORT_OPTIONS = listOf(
     "Likes" to "likes",
     "Updated" to "lastModified",
     "Created" to "createdAt",
-    "Trending" to "trendingScore"
+    "Trending" to "trendingScore",
+    "Size" to "size" // client-side: the Hub API cannot sort by file size
 )
 
 private val AUTHOR_SHORTCUTS = listOf("litert-community", "google")
@@ -45,23 +46,43 @@ fun ModelBrowserScreen(
     errorMessage: String?,
     hasToken: Boolean,
     deviceSpecs: DeviceSpecs,
+    fileSizes: Map<String, List<HfSibling>>,
     onSearch: (HfSearchParams) -> Unit,
     onDownload: (HfModel) -> Unit,
     onBack: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
     var author by remember { mutableStateOf("") }
+    var fileFilter by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf("downloads") }
     var descending by remember { mutableStateOf(true) }
     var limit by remember { mutableIntStateOf(50) }
     var fitsOnly by remember { mutableStateOf(false) }
 
-    val doSearch = { onSearch(HfSearchParams(query, author, sort, descending, limit)) }
+    // "size" is sorted locally — the Hub API has no size sort.
+    val doSearch = {
+        onSearch(HfSearchParams(query, author, if (sort == "size") "downloads" else sort, descending, limit))
+    }
 
-    // Client-side device filter: keep models that fit or whose size is unknown.
-    val shownResults =
-        if (fitsOnly) results.filter { ModelFit.fitsDevice(it.id, deviceSpecs) != false }
-        else results
+    fun minSizeOf(model: HfModel): Long? =
+        fileSizes[model.id]?.mapNotNull { it.size }?.minOrNull()
+
+    // Client-side refinements over the API results.
+    var shownResults = results
+    if (fileFilter.isNotBlank()) {
+        shownResults = shownResults.filter { model ->
+            val names = fileSizes[model.id]?.map { it.rfilename } ?: model.litertlmFilenames
+            names.any { it.contains(fileFilter.trim(), ignoreCase = true) }
+        }
+    }
+    if (fitsOnly) {
+        shownResults = shownResults.filter { ModelFit.fitsDevice(it.id, deviceSpecs) != false }
+    }
+    if (sort == "size") {
+        val (known, unknown) = shownResults.partition { minSizeOf(it) != null }
+        val sorted = known.sortedBy { minSizeOf(it) }
+        shownResults = (if (descending) sorted.reversed() else sorted) + unknown
+    }
 
     Column(
         modifier = Modifier
@@ -114,6 +135,16 @@ fun ModelBrowserScreen(
                 value = author,
                 onValueChange = { author = it },
                 placeholder = { Text("Author (user/org)", color = Color.Gray, fontSize = 12.sp) },
+                singleLine = true,
+                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                modifier = Modifier.width(180.dp),
+                colors = browserFieldColors()
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            OutlinedTextField(
+                value = fileFilter,
+                onValueChange = { fileFilter = it },
+                placeholder = { Text("File name contains…", color = Color.Gray, fontSize = 12.sp) },
                 singleLine = true,
                 textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
                 modifier = Modifier.width(180.dp),
@@ -219,7 +250,8 @@ fun ModelBrowserScreen(
                                 Text(
                                     "⬇ ${model.downloads} · ♥ ${model.likes}" +
                                         (if (model.isGated) " · 🔒 gated" else "") +
-                                        fitLabel(model.id, deviceSpecs),
+                                        fitLabel(model.id, deviceSpecs) +
+                                        sizeLabel(model, fileSizes),
                                     color = Color.Gray,
                                     fontSize = 11.sp
                                 )
@@ -233,6 +265,17 @@ fun ModelBrowserScreen(
             }
         }
     }
+}
+
+private fun sizeLabel(model: HfModel, fileSizes: Map<String, List<HfSibling>>): String {
+    val files = fileSizes[model.id]
+        ?: return if (model.litertlmFilenames.isNotEmpty()) " · ${model.litertlmFilenames.size} file(s)" else ""
+    val sizes = files.mapNotNull { it.size }
+    if (sizes.isEmpty()) return " · ${files.size} file(s)"
+    val min = sizes.min() / 1_073_741_824.0
+    val max = sizes.max() / 1_073_741_824.0
+    val range = if (sizes.size == 1 || min == max) "%.2f GB".format(min) else "%.2f–%.2f GB".format(min, max)
+    return " · ${files.size} file(s) · $range"
 }
 
 private fun fitLabel(modelId: String, specs: DeviceSpecs): String {
